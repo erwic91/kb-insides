@@ -6,6 +6,7 @@ import {
   type ManagerTableRow,
 } from "../lib/db/queries";
 import { eur, eurFull, eurSigned, num } from "../lib/format";
+import RefreshButton from "../components/RefreshButton";
 
 export const dynamic = "force-dynamic";
 
@@ -59,13 +60,19 @@ export default async function DashboardPage({
 
   return (
     <main className="page">
-      <div className="page-head">
-        <h1>Dashboard</h1>
-        <p className="sub">
-          {league.name}
-          {day != null ? ` · Spieltag ${day}` : ""} · {active.length} aktive von{" "}
-          {rows.length} Managern
-        </p>
+      <div
+        className="page-head"
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}
+      >
+        <div>
+          <h1>Dashboard</h1>
+          <p className="sub">
+            {league.name}
+            {day != null ? ` · Spieltag ${day}` : ""} · {active.length} aktive von{" "}
+            {rows.length} Managern
+          </p>
+        </div>
+        <RefreshButton leagueId={league.id} />
       </div>
 
       {calibration && (

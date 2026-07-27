@@ -79,92 +79,109 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
   }
 
   const leagues: LeagueIngestResult[] = [];
-
   for (const leagueId of leagueIds) {
-    try {
-      // M2 — Ranking.
-      const ranking = await fetchRanking(leagueId, { token });
-      const rows = parseRanking(ranking, leagueId);
-      await upsertLeague(rows.league);
-      await upsertManagers(rows.managers);
-      await upsertManagerSnapshots(rows.snapshots);
-      const day = rows.snapshots[0]?.day ?? null;
-      if (ownId && rows.managers.some((m) => m.id === ownId)) {
-        await markIsMe(leagueId, ownId);
-      }
-      await politeDelay();
-
-      // M4 — Transfers je Manager.
-      let transferCount = 0;
-      let ownTransfers: TransferRow[] = [];
-      for (const manager of rows.managers) {
-        try {
-          const tr = await fetchAllTransfers(leagueId, manager.id, { token });
-          const transferRows = parseTransfers(tr, leagueId, manager.id);
-          await upsertTransfers(transferRows);
-          transferCount += transferRows.length;
-          if (manager.id === ownId) ownTransfers = transferRows;
-        } catch {
-          // Manager-Transfer-Fehler ignorieren, nächster Manager.
-        }
-        await politeDelay();
-      }
-
-      // M6 — Markt.
-      let marketCount = 0;
-      try {
-        const market = await fetchMarket(leagueId, { token });
-        const parsed = parseMarket(market, leagueId, new Date().toISOString());
-        await upsertPlayers(parsed.players);
-        await upsertMarketLog(parsed.marketLog);
-        await upsertPlayerMv(parsed.playerMv);
-        marketCount = parsed.marketLog.length;
-      } catch {
-        // Markt-Fehler isolieren.
-      }
-      await politeDelay();
-
-      // §8 — Selbstkalibrierung (eigenes Konto exakt vs. Rekonstruktion).
-      let calibrationDelta: number | null = null;
-      if (day != null) {
-        try {
-          const budget = await fetchMeBudget(leagueId, { token });
-          const myActual = budget.b;
-          // prizes = 0 bis Prämien verdrahtet sind. Discovery-Ergebnis: der
-          // Endpunkt ist `/managers/{mid}/dashboard` (Feld `prft`); post-Reset
-          // 0, daher noch nicht in die Geldformel gezogen (Checkpoint C, braucht
-          // laufende Saison zur Bedeutungs-Klärung: Prämien vs. Handelsgewinn).
-          const myReconstructed = reconstructCash(ownTransfers, {
-            startBudget: START_BUDGET,
-          });
-          calibrationDelta = myReconstructed - myActual;
-          await upsertCalibration({
-            league_id: leagueId,
-            day,
-            my_reconstructed: myReconstructed,
-            my_actual: myActual,
-            delta: calibrationDelta,
-          });
-        } catch {
-          // me/budget nur für eigene Ligen verfügbar.
-        }
-        await politeDelay();
-      }
-
-      leagues.push({
-        leagueId,
-        name: rows.league.name,
-        day,
-        managers: rows.managers.length,
-        snapshots: rows.snapshots.length,
-        transfers: transferCount,
-        market: marketCount,
-        calibrationDelta,
-      });
-    } catch (e) {
-      leagues.push({ leagueId, error: (e as Error).message });
-    }
+    leagues.push(await collectOneLeague(leagueId, token, ownId));
   }
-
   return { leagues };
+}
+
+/** Sammelt genau eine Liga on-demand (Refresh-Button / gezielter Lauf). */
+export async function runCollectLeague(leagueId: string): Promise<LeagueIngestResult> {
+  const token = await ensureToken();
+  const ownId = await ensureOwnUserId();
+  return collectOneLeague(leagueId, token, ownId);
+}
+
+/**
+ * Pro-Liga-Ingest: Ranking → Transfers je Manager → Markt → Selbstkalibrierung.
+ * Fehler bleiben auf die Liga isoliert (Rückgabe trägt dann `error`).
+ */
+async function collectOneLeague(
+  leagueId: string,
+  token: string,
+  ownId: string | null,
+): Promise<LeagueIngestResult> {
+  try {
+    // M2 — Ranking.
+    const ranking = await fetchRanking(leagueId, { token });
+    const rows = parseRanking(ranking, leagueId);
+    await upsertLeague(rows.league);
+    await upsertManagers(rows.managers);
+    await upsertManagerSnapshots(rows.snapshots);
+    const day = rows.snapshots[0]?.day ?? null;
+    if (ownId && rows.managers.some((m) => m.id === ownId)) {
+      await markIsMe(leagueId, ownId);
+    }
+    await politeDelay();
+
+    // M4 — Transfers je Manager (volle Historie via ?start-Paginierung).
+    let transferCount = 0;
+    let ownTransfers: TransferRow[] = [];
+    for (const manager of rows.managers) {
+      try {
+        const tr = await fetchAllTransfers(leagueId, manager.id, { token });
+        const transferRows = parseTransfers(tr, leagueId, manager.id);
+        await upsertTransfers(transferRows);
+        transferCount += transferRows.length;
+        if (manager.id === ownId) ownTransfers = transferRows;
+      } catch {
+        // Manager-Transfer-Fehler ignorieren, nächster Manager.
+      }
+      await politeDelay();
+    }
+
+    // M6 — Markt.
+    let marketCount = 0;
+    try {
+      const market = await fetchMarket(leagueId, { token });
+      const parsed = parseMarket(market, leagueId, new Date().toISOString());
+      await upsertPlayers(parsed.players);
+      await upsertMarketLog(parsed.marketLog);
+      await upsertPlayerMv(parsed.playerMv);
+      marketCount = parsed.marketLog.length;
+    } catch {
+      // Markt-Fehler isolieren.
+    }
+    await politeDelay();
+
+    // §8 — Selbstkalibrierung (eigenes Konto exakt vs. Rekonstruktion).
+    let calibrationDelta: number | null = null;
+    if (day != null) {
+      try {
+        const budget = await fetchMeBudget(leagueId, { token });
+        const myActual = budget.b;
+        // prizes = 0 bis Prämien verdrahtet sind. Discovery-Ergebnis: der
+        // Endpunkt ist `/managers/{mid}/dashboard` (Feld `prft`); post-Reset
+        // 0, daher noch nicht in die Geldformel gezogen (Checkpoint C, braucht
+        // laufende Saison zur Bedeutungs-Klärung: Prämien vs. Handelsgewinn).
+        const myReconstructed = reconstructCash(ownTransfers, {
+          startBudget: START_BUDGET,
+        });
+        calibrationDelta = myReconstructed - myActual;
+        await upsertCalibration({
+          league_id: leagueId,
+          day,
+          my_reconstructed: myReconstructed,
+          my_actual: myActual,
+          delta: calibrationDelta,
+        });
+      } catch {
+        // me/budget nur für eigene Ligen verfügbar.
+      }
+      await politeDelay();
+    }
+
+    return {
+      leagueId,
+      name: rows.league.name,
+      day,
+      managers: rows.managers.length,
+      snapshots: rows.snapshots.length,
+      transfers: transferCount,
+      market: marketCount,
+      calibrationDelta,
+    };
+  } catch (e) {
+    return { leagueId, error: (e as Error).message };
+  }
 }

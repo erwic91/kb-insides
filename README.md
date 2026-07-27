@@ -101,7 +101,17 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://<app>.vercel.app/api/dev/ba
 
 # Einzelner Ad-hoc-Sammel-Lauf (Dev)
 curl -H "Authorization: Bearer $CRON_SECRET" https://<app>.vercel.app/api/dev/collect
+
+# On-Demand für EINE Liga (das treibt auch der „Aktualisieren"-Button)
+curl -X POST -H "Authorization: Bearer $CRON_SECRET" \
+  "https://<app>.vercel.app/api/collect?league=<LIGA_ID>"
 ```
+
+**„Aktualisieren"-Button (Dashboard).** Fordert on-demand frische Daten der
+gerade gewählten Liga an (`POST /api/collect?league=…`). Das `CRON_SECRET` wird
+einmalig im Browser eingegeben und nur in `localStorage` gehalten (nicht im
+Bundle). Nützlich, weil der Vercel-Hobby-Cron nur **1×/Tag** läuft — so lassen
+sich neu beigetretene Ligen sofort befüllen, ohne auf den Cron zu warten.
 
 **Monitoring.** Erfolg = HTTP 200 mit `{ ok: true, ... }`. Vercel → Deployments →
 Functions zeigt Cron-Logs; bei `ok:false` steht die Ursache im `error`-Feld.

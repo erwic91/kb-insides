@@ -392,3 +392,24 @@ table.data tbody tr:hover {
   color: var(--text);
   margin: 0 0 8px;
 }
+
+/* On-Demand-Aktualisieren-Button */
+.btn {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-elev);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
