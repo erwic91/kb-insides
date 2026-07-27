@@ -6,8 +6,8 @@
  *
  * Defensiv (Guardrail §2): jeder Abgriff in try/catch, höfliche Pause dazwischen,
  * bei Sperr-/Rate-Limit-Signal (403/429) bricht kbFetch ohnehin sofort ab.
- * Token-Felder werden vor der Ausgabe redigiert, damit kein Secret in ein
- * committetes Fixture oder eine HTTP-Antwort gelangt.
+ * Token- und E-Mail-Felder werden vor der Ausgabe redigiert, damit kein Secret
+ * und keine PII in ein committetes Fixture oder eine HTTP-Antwort gelangt.
  */
 import { login } from "./auth";
 import { kbFetch, politeDelay } from "./http";
@@ -16,6 +16,7 @@ import { requireEnv, parseLeagueIds } from "../env";
 /** Feldnamen, deren Werte Tokens enthalten können — überall rekursiv redigieren. */
 const TOKEN_KEYS = new Set([
   "tkn",
+  "chttkn",
   "token",
   "accessToken",
   "at",
@@ -26,16 +27,22 @@ const TOKEN_KEYS = new Set([
   "rtk",
 ]);
 
-/** Ersetzt Token-Werte durch einen Platzhalter, Struktur bleibt erhalten. */
-export function redactTokens(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactTokens);
+/** Feldnamen mit E-Mail/PII → durch Platzhalter ersetzen (Struktur bleibt). */
+const EMAIL_KEYS = new Set(["email", "vemail", "emve"]);
+
+/** Ersetzt Token-/E-Mail-Werte durch Platzhalter, Struktur bleibt erhalten. */
+export function redactSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSecrets);
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] =
-        TOKEN_KEYS.has(k) && typeof v === "string"
-          ? `<redacted len=${v.length}>`
-          : redactTokens(v);
+      if (TOKEN_KEYS.has(k) && typeof v === "string") {
+        out[k] = `<redacted len=${v.length}>`;
+      } else if (EMAIL_KEYS.has(k) && typeof v === "string") {
+        out[k] = "redacted@example.com";
+      } else {
+        out[k] = redactSecrets(v);
+      }
     }
     return out;
   }
@@ -65,11 +72,50 @@ function findId(obj: unknown, keys: string[]): string | null {
   return null;
 }
 
+/** Eigene User-ID aus der Login-Antwort (u.id) — garantiert Liga-Mitglied. */
+function ownUserId(raw: Record<string, unknown>): string | null {
+  const u = raw.u;
+  if (u && typeof u === "object") {
+    const id = (u as Record<string, unknown>).id;
+    if (typeof id === "string" && id) return id;
+    if (typeof id === "number") return String(id);
+  }
+  return null;
+}
+
+/** Liga-IDs: konfigurierte bevorzugen, sonst aus der echten Liga-Liste `srvl`. */
+function discoverLeagueIds(
+  raw: Record<string, unknown>,
+  selection: Record<string, unknown> | null,
+  configured: string[],
+): string[] {
+  if (configured.length) return configured;
+  const ids: string[] = [];
+  const srvl = raw.srvl;
+  if (Array.isArray(srvl)) {
+    for (const l of srvl) {
+      const id = (l as Record<string, unknown>)?.id;
+      if (id != null) ids.push(String(id));
+    }
+  }
+  if (ids.length) return ids;
+  const it = selection?.it;
+  if (Array.isArray(it)) {
+    for (const l of it) {
+      const i = (l as Record<string, unknown>)?.i;
+      if (i != null) ids.push(String(i));
+    }
+  }
+  return ids;
+}
+
 export interface CaptureResult {
   /** name → redigierte Rohantwort (bzw. { error } bei Fehlschlag). */
   bundle: Record<string, unknown>;
   /** menschenlesbare Fortschrittszeilen. */
   log: string[];
+  /** entdeckte Ligen (id → name), für Nachverfolgung. */
+  leagueIds: string[];
   leagueId: string | null;
   managerId: string | null;
   playerId: string | null;
@@ -87,7 +133,7 @@ export async function captureFixtures(): Promise<CaptureResult> {
   async function capture(name: string, path: string, token: string): Promise<Record<string, unknown> | null> {
     try {
       const res = await kbFetch<Record<string, unknown>>(path, { token });
-      bundle[name] = redactTokens(res);
+      bundle[name] = redactSecrets(res);
       log.push(`✓ ${name} (${path})`);
       await politeDelay();
       return res;
@@ -105,51 +151,52 @@ export async function captureFixtures(): Promise<CaptureResult> {
     password: requireEnv("KICKBASE_PASSWORD"),
   });
   const token = tokens.accessToken;
-  bundle["login"] = redactTokens(tokens.raw);
+  bundle["login"] = redactSecrets(tokens.raw);
   log.push(`✓ login (Access-Token len ${token.length}, Refresh ${tokens.refreshToken ? "ja" : "nein"})`);
 
-  // Ligen-Listing (Kandidaten-Endpunkte).
-  for (const [name, path] of [
-    ["leagues_selection", "/v4/leagues/selection"],
-    ["user_leagues", "/v4/user/leagues"],
-  ] as const) {
-    await capture(name, path, token);
-  }
+  // Liga-Listing (das funktionierende Selection-Endpoint).
+  const selection = await capture("leagues_selection", "/v4/leagues/selection", token);
 
-  const configured = parseLeagueIds();
-  const leagueId = configured[0] ?? findId(tokens.raw, ["i", "id", "lid", "leagueId"]) ?? null;
+  const leagueIds = discoverLeagueIds(tokens.raw, selection, parseLeagueIds());
+  const managerId = ownUserId(tokens.raw);
 
-  let managerId: string | null = null;
-  let playerId: string | null = null;
-
-  if (!leagueId) {
+  if (leagueIds.length === 0) {
     log.push("⚠ Keine Liga-ID gefunden — KICKBASE_LEAGUE_IDS setzen und wiederholen.");
-    return { bundle, log, leagueId: null, managerId, playerId };
+    return { bundle, log, leagueIds, leagueId: null, managerId, playerId: null };
   }
-  log.push(`→ Verwende Liga ${leagueId} für ligagebundene Endpunkte …`);
 
-  await capture("overview", `/v4/leagues/${leagueId}/overview`, token);
-  const ranking = await capture("ranking", `/v4/leagues/${leagueId}/ranking`, token);
-  await capture("market", `/v4/leagues/${leagueId}/market`, token);
-  await capture("me_budget", `/v4/leagues/${leagueId}/me/budget`, token);
+  const primary = leagueIds[0]!;
+  log.push(`→ Ligen: ${leagueIds.join(", ")} — primär ${primary}, eigene Manager-ID ${managerId ?? "?"}`);
 
-  managerId = findId(ranking, ["ui", "mid", "managerId", "i", "id"]);
-  if (managerId) {
-    log.push(`→ Manager ${managerId}`);
-    await capture("manager_transfers", `/v4/leagues/${leagueId}/managers/${managerId}/transfer`, token);
-    const squad = await capture("manager_squad", `/v4/leagues/${leagueId}/managers/${managerId}/squad`, token);
+  // Overview für die Primärliga (kanonisch) + weitere Ligen (Multi-Liga-Beleg, max 3).
+  await capture("overview", `/v4/leagues/${primary}/overview`, token);
+  for (const lid of leagueIds.slice(1, 3)) {
+    await capture(`overview_${lid}`, `/v4/leagues/${lid}/overview`, token);
+  }
+
+  const ranking = await capture("ranking", `/v4/leagues/${primary}/ranking`, token);
+  await capture("market", `/v4/leagues/${primary}/market`, token);
+  await capture("me_budget", `/v4/leagues/${primary}/me/budget`, token);
+
+  // Manager-Endpunkte mit der eigenen ID (garantiert Mitglied); sonst aus Ranking.
+  const mid = managerId ?? findId(ranking, ["ui", "mid", "managerId", "i", "id"]);
+  let playerId: string | null = null;
+  if (mid) {
+    log.push(`→ Manager ${mid}`);
+    await capture("manager_transfers", `/v4/leagues/${primary}/managers/${mid}/transfer`, token);
+    const squad = await capture("manager_squad", `/v4/leagues/${primary}/managers/${mid}/squad`, token);
 
     playerId = findId(squad, ["pi", "pid", "playerId", "i", "id"]);
     if (playerId) {
       log.push(`→ Spieler ${playerId}`);
-      await capture("player_marketvalue", `/v4/leagues/${leagueId}/players/${playerId}/marketvalue/365`, token);
+      await capture("player_marketvalue", `/v4/leagues/${primary}/players/${playerId}/marketvalue/365`, token);
     } else {
       log.push("⚠ Keine Spieler-ID im Kader gefunden.");
     }
   } else {
-    log.push("⚠ Keine Manager-ID im Ranking gefunden.");
+    log.push("⚠ Keine Manager-ID gefunden.");
   }
 
   log.push("✓ Fixture-Capture fertig.");
-  return { bundle, log, leagueId, managerId, playerId };
+  return { bundle, log, leagueIds, leagueId: primary, managerId: mid, playerId };
 }
