@@ -43,7 +43,9 @@ Tabellen ohne öffentliche Policies.
 ## Projektstatus (Meilensteine)
 
 - [x] **M0** — Projektgerüst (Next.js, Supabase-Client, vitest, vercel.json, Migration)
-- [ ] **M1** — Kickbase-Auth + Smoke-Test
+- [x] **M1 (Code)** — Kickbase-Auth-Client + `scripts/smoke.ts` + `scripts/capture-fixtures.ts`
+  — **offen:** Live-Login ausführen, sobald der Container die Env-Variablen sieht:
+  `pnpm smoke` → danach `pnpm capture-fixtures` (Checkpoint B)
 - [ ] **M2** — Schema-Ingest (Ranking → manager_snapshots)
 - [ ] **M3** — Backfill aller Spieltage
 - [ ] **M4** — Transfers + Kontorekonstruktion + Kalibrierung
