@@ -7,12 +7,14 @@ import {
   TransfersSchema,
   LeaguesSelectionSchema,
   MarketSchema,
+  ManagerDashboardSchema,
   type Ranking,
   type Overview,
   type MeBudget,
   type Transfers,
   type LeaguesSelection,
   type Market,
+  type ManagerDashboard,
 } from "./schemas";
 
 /**
@@ -94,6 +96,23 @@ export async function fetchLeaguesSelection(
 ): Promise<LeaguesSelection> {
   const raw = await kbFetch<unknown>(`/v4/leagues/selection`, opts);
   return LeaguesSelectionSchema.parse(raw);
+}
+
+/**
+ * `/v4/leagues/{lid}/managers/{mid}/dashboard` — Kaderwert (`tv`), Gesamtpunkte
+ * (`tp`) und Prämien (`prft`) eines Managers. Quelle für den Kaderwert, wenn das
+ * Ranking ihn (früh in der Saison) noch nicht führt.
+ */
+export async function fetchManagerDashboard(
+  leagueId: string,
+  managerId: string,
+  opts: EndpointOptions,
+): Promise<ManagerDashboard> {
+  const raw = await kbFetch<unknown>(
+    `/v4/leagues/${leagueId}/managers/${managerId}/dashboard`,
+    opts,
+  );
+  return ManagerDashboardSchema.parse(raw);
 }
 
 /** `/v4/leagues/{lid}/market` — aktuelles Marktangebot. */

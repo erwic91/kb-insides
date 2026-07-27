@@ -171,11 +171,16 @@ An echten Daten geklärt:
 
 Noch offen (blockieren die euro-genaue Kalibrierung, Checkpoint C):
 
-- **Bedeutung von `prft` klären.** Feld gefunden, aber post-Reset 0 → unklar, ob
-  `prft` = Erfolgsprämien oder = Handelsgewinn (Doppelzählungs-Gefahr). Deshalb
-  **noch nicht** in die Geldformel verdrahtet. In laufender Saison an `me/budget`
-  gegenprüfen, dann `prizes` in `reconstructCash` speisen. `mds`-Item-Shape ist
-  post-Reset (leeres Array) ebenfalls erst dann sichtbar.
+- **Erfolgsprämien-Ingest.** Echter Endpunkt (aus der Community-API-Doku):
+  `GET /v4/leagues/{lid}/user/achievements` listet erreichte Achievements
+  (`ise:true`, `ac` = Anzahl), die Detail-Route `…/achievements/{type}` trägt
+  `er` = Prämie in €. Summe der `er` über erreichte Achievements = Erfolgsprämien
+  → als `prizes` in `reconstructCash`. (Unser alter Rateversuch
+  `/managers/{mid}/achievements` war 404 — daher der Fehlschlag.) `dashboard.prft`
+  bleibt als Gegenprobe.
+- **Kaderwert-Quelle.** Früh in der Saison führt `/ranking` keinen Kaderwert;
+  er kommt aus `/managers/{mid}/dashboard` (`tv`) — seit dem Dashboard-Enrichment
+  im Collector angebunden.
 - **Start-Budget-Semantik (neuer Fund an der aktiven Liga FFL).** In `/selection`
   ist `b` das **aktuelle Guthaben**, nicht das Startbudget: FFL hat `b=52,8 Mio`
   (aktuell) bei `overview.b=50 Mio` (Konfig-Start). Für reset-Ligen fallen beide

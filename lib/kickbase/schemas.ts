@@ -57,6 +57,25 @@ export const MeBudgetSchema = z
   .passthrough();
 export type MeBudget = z.infer<typeof MeBudgetSchema>;
 
+/**
+ * Antwort von `/v4/leagues/{lid}/managers/{mid}/dashboard`.
+ * Trägt Kaderwert + Punkte auch dann, wenn das Ranking sie (früh in der Saison)
+ * nicht liefert. `prft` = Prämien/Gewinn (Checkpoint C), `ph` = Punkte-Historie.
+ */
+export const ManagerDashboardSchema = z
+  .object({
+    u: z.string().optional(), // Manager-ID
+    tv: z.number().nullish(), // Kaderwert (Team Value)
+    tp: z.number().nullish(), // Gesamtpunkte der Saison
+    ap: z.number().nullish(), // Ø-Punkte
+    pl: z.number().nullish(), // Platzierung
+    mdw: z.number().nullish(), // Spieltagssiege
+    prft: z.number().nullish(), // Prämien/Gewinn
+    ph: z.array(z.number().nullable()).nullish(), // Punkte je Spieltag
+  })
+  .passthrough();
+export type ManagerDashboard = z.infer<typeof ManagerDashboardSchema>;
+
 /** Ein Transfer (`it[]`) aus `/v4/leagues/{lid}/managers/{mid}/transfer`. */
 export const TransferItemSchema = z
   .object({

@@ -5,6 +5,7 @@ import {
   fetchLeaguesSelection,
   fetchMarket,
   fetchMeBudget,
+  fetchManagerDashboard,
 } from "../kickbase/endpoints";
 import { politeDelay } from "../kickbase/http";
 import { parseLeagueIds } from "../env";
@@ -107,17 +108,32 @@ async function collectOneLeague(
     const rows = parseRanking(ranking, leagueId);
     await upsertLeague(rows.league);
     await upsertManagers(rows.managers);
-    await upsertManagerSnapshots(rows.snapshots);
     const day = rows.snapshots[0]?.day ?? null;
     if (ownId && rows.managers.some((m) => m.id === ownId)) {
       await markIsMe(leagueId, ownId);
     }
     await politeDelay();
 
-    // M4 — Transfers je Manager (volle Historie via ?start-Paginierung).
+    const snapById = new Map(rows.snapshots.map((s) => [s.manager_id, s]));
+
+    // M4 — Transfers je Manager (volle Historie via ?start-Paginierung) +
+    // Kaderwert-Anreicherung: früh in der Saison führt das Ranking keinen
+    // Kaderwert; dann aus dem Manager-Dashboard (`tv`/`tp`) nachziehen.
     let transferCount = 0;
     let ownTransfers: TransferRow[] = [];
     for (const manager of rows.managers) {
+      const snap = snapById.get(manager.id);
+      if (snap && snap.team_value == null) {
+        try {
+          const dash = await fetchManagerDashboard(leagueId, manager.id, { token });
+          snap.team_value = dash.tv ?? null;
+          snap.points = snap.points ?? dash.tp ?? null;
+        } catch {
+          // Dashboard optional — Kaderwert bleibt dann null.
+        }
+        await politeDelay();
+      }
+
       try {
         const tr = await fetchAllTransfers(leagueId, manager.id, { token });
         const transferRows = parseTransfers(tr, leagueId, manager.id);
@@ -129,6 +145,10 @@ async function collectOneLeague(
       }
       await politeDelay();
     }
+
+    // Snapshots erst jetzt schreiben — mit angereichertem Kaderwert/Punkten.
+    await upsertManagerSnapshots(rows.snapshots);
+    await politeDelay();
 
     // M6 — Markt.
     let marketCount = 0;
