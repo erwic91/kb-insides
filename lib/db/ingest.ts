@@ -24,6 +24,31 @@ export async function getLeagueTrackingSince(leagueId: string): Promise<string |
   return (data?.tracking_since as string) ?? null;
 }
 
+export interface LeagueSettingsInput {
+  game_mode?: number | null;
+  start_budget?: number | null;
+  tracking_since?: string | null;
+  include_history?: boolean;
+  bonus_mode?: string;
+}
+
+/** Aktualisiert die per-Liga-Einstellungen (nur übergebene Felder). */
+export async function updateLeagueSettings(
+  leagueId: string,
+  s: LeagueSettingsInput,
+): Promise<void> {
+  const patch: Record<string, unknown> = {};
+  if (s.game_mode !== undefined) patch.game_mode = s.game_mode;
+  if (s.start_budget !== undefined) patch.start_budget = s.start_budget;
+  if (s.tracking_since !== undefined) patch.tracking_since = s.tracking_since;
+  if (s.include_history !== undefined) patch.include_history = s.include_history;
+  if (s.bonus_mode !== undefined) patch.bonus_mode = s.bonus_mode;
+  if (Object.keys(patch).length === 0) return;
+  const supabase = getServiceClient();
+  const { error } = await supabase.from("leagues").update(patch).eq("id", leagueId);
+  if (error) throw new Error(`Liga-Einstellungen fehlgeschlagen: ${error.message}`);
+}
+
 /** Setzt den Monitoring-Startpunkt einer Liga (ISO-String oder null zum Löschen). */
 export async function setLeagueTrackingSince(
   leagueId: string,

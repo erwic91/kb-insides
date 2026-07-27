@@ -15,10 +15,14 @@ export interface LeagueLite {
   name: string;
   startBudget: number;
   isDefault: boolean;
-  /** Kickbase-Spielmodus: 2 = Manager-Liga (Konto rekonstruierbar), 1 = Classic. */
+  /** Kickbase-Spielmodus: 2 = 200 Mio/Nullspieler, 1 = 50 Mio/zugeloste Spieler. */
   gameMode: number | null;
   /** Monitoring-Startpunkt (ISO) — Daten davor werden nicht geladen. null = alles. */
   trackingSince: string | null;
+  /** Historische Daten vor trackingSince einbeziehen? */
+  includeHistory: boolean;
+  /** Bonusmodell: "matchday" (Spieltagsboni) oder "lockin" (nur Lock-In). */
+  bonusMode: string;
 }
 
 export interface ManagerTableRow {
@@ -66,7 +70,9 @@ export async function getLeagues(): Promise<LeagueLite[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("leagues")
-    .select("id, name, start_budget, is_default, game_mode, tracking_since")
+    .select(
+      "id, name, start_budget, is_default, game_mode, tracking_since, include_history, bonus_mode",
+    )
     .order("name");
   if (error || !data) return [];
   return data.map((l) => ({
@@ -76,6 +82,8 @@ export async function getLeagues(): Promise<LeagueLite[]> {
     isDefault: Boolean(l.is_default),
     gameMode: (l.game_mode as number) ?? null,
     trackingSince: (l.tracking_since as string) ?? null,
+    includeHistory: l.include_history == null ? true : Boolean(l.include_history),
+    bonusMode: (l.bonus_mode as string) ?? "matchday",
   }));
 }
 
@@ -167,12 +175,19 @@ export async function getManagerTable(
 
   const transfers = await getTransfersByManager(league.id);
   const now = Date.now();
+  // Ab Startzeitpunkt rechnen: Kontostand/Aktivität nur aus Transfers seit dem
+  // Tracking-Start (start_budget ist die Budget-Basis genau zu diesem Zeitpunkt).
+  const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
 
   const rows: ManagerTableRow[] = data.map((s) => {
     const mid = s.manager_id as string;
     const mgr = mgrMap.get(mid);
     const teamValue = (s.team_value as number) ?? null;
-    const myTransfers = transfers.get(mid);
+    const allTransfers = transfers.get(mid);
+    const myTransfers =
+      sinceMs != null && allTransfers
+        ? allTransfers.filter((t) => t.ts != null && Date.parse(t.ts) >= sinceMs)
+        : allTransfers;
     const cash = myTransfers
       ? reconstructCash(myTransfers, { startBudget: league.startBudget })
       : null;

@@ -8,7 +8,7 @@ import {
 import { eur, eurSigned, num, pct } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
 import ManagerTable from "../components/ManagerTable";
-import TrackingControl from "../components/TrackingControl";
+import LeagueSettings from "../components/LeagueSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -36,9 +36,10 @@ export default async function DashboardPage({
 
   const { day, rows } = await getManagerTable(league);
   const calibration = await getCalibration(league);
-  // Absolute Konto-Rekonstruktion braucht eine bekannte Budget-Basis: nur in
-  // Manager-Ligen (gpm:2) OHNE Tracking-Cutoff (sonst nur Teilhistorie).
-  const showMoney = league.gameMode === 2 && !league.trackingSince;
+  // Konto/Maximalgebot sind rekonstruierbar, sobald eine Budget-Basis (Start-
+  // Budget) konfiguriert ist. Gerechnet wird ab dem Startzeitpunkt (siehe
+  // getManagerTable). Gilt für beide Modi (Draft-Kader ist „gratis").
+  const showMoney = league.startBudget > 0;
   const active = rows.filter((r) => r.active);
   const me = rows.find((r) => r.isMe);
 
@@ -85,7 +86,16 @@ export default async function DashboardPage({
         <RefreshButton leagueId={league.id} />
       </div>
 
-      <TrackingControl leagueId={league.id} current={league.trackingSince} />
+      <LeagueSettings
+        leagueId={league.id}
+        current={{
+          gameMode: league.gameMode,
+          startBudget: league.startBudget,
+          trackingSince: league.trackingSince,
+          includeHistory: league.includeHistory,
+          bonusMode: league.bonusMode,
+        }}
+      />
 
       {showMoney && calibration && (
         <div className={`notice ${calibration.delta === 0 ? "" : "warn"}`}>
@@ -102,17 +112,15 @@ export default async function DashboardPage({
 
       {!showMoney && (
         <div className="note-banner">
-          {league.gameMode !== 2 ? (
-            <>
-              <b>{league.name}</b> ist eine Classic-Liga (Draft-Startkader).
-            </>
-          ) : (
-            <>
-              <b>{league.name}</b> hat einen Tracking-Startpunkt (nur Teilhistorie).
-            </>
-          )}{" "}
-          Kontostand, Maximalgebot &amp; Liquidität brauchen eine bekannte Budget-Basis und
-          werden daher ausgeblendet — angezeigt werden nur API-exakte Werte.
+          Für <b>{league.name}</b> ist noch kein Start-Budget gesetzt — Kontostand,
+          Maximalgebot &amp; Liquidität brauchen diese Basis. Unter
+          <b> Liga-Einstellungen</b> Typ &amp; Start-Budget wählen, dann erscheinen sie.
+        </div>
+      )}
+      {showMoney && league.trackingSince && (
+        <div className="note">
+          Kontostand &amp; Maximalgebot werden ab dem Liga-Start
+          ({new Date(league.trackingSince).toLocaleDateString("de-DE")}) gerechnet.
         </div>
       )}
 
@@ -148,7 +156,7 @@ export default async function DashboardPage({
           <h2>Alle Manager</h2>
           <span className="note">Spaltenkopf klicken zum Sortieren</span>
         </div>
-        <ManagerTable rows={rows} gameMode={league.gameMode} leagueId={league.id} />
+        <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
       </div>
 
       {(verkaufsdruck.length > 0 || schlaefer.length > 0) && (

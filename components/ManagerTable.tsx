@@ -60,14 +60,13 @@ function initials(name: string): string {
 
 export default function ManagerTable({
   rows,
-  gameMode,
+  showMoney,
   leagueId,
 }: {
   rows: ManagerTableRow[];
-  gameMode: number | null;
+  showMoney: boolean;
   leagueId: string;
 }) {
-  const showMoney = gameMode === 2;
   // Spalte nur zeigen, wenn (a) im Modus valide und (b) mind. ein Wert vorhanden.
   const cols = COLS.filter((c) => {
     if (c.money && !showMoney) return false;
