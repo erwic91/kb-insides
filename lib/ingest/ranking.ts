@@ -25,6 +25,7 @@ export interface SnapshotRow {
   day: number;
   team_value: number | null;
   points: number | null;
+  squad_size: number | null;
 }
 
 export interface RankingRows {
@@ -59,6 +60,7 @@ export function parseRanking(
     day,
     team_value: u.tv ?? null,
     points: u.sp ?? null,
+    squad_size: null, // wird im Collector aus dem squad-Endpunkt angereichert
   }));
 
   return {

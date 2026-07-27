@@ -29,6 +29,14 @@ export interface ManagerTableRow {
   cash: number | null;
   /** Maximalgebot — nur wenn cash & Kaderwert bekannt. */
   maxBid: number | null;
+  /** Gesamtwert = Kontostand + Kaderwert (nur wenn beide bekannt). */
+  total: number | null;
+  /** Liquidität = Kontostand / Gesamt (0..1, nur wenn Gesamt > 0). */
+  liquidity: number | null;
+  /** Tage seit dem letzten Transfer; null = keine Transfers erfasst. */
+  lastActiveDays: number | null;
+  /** Anzahl erfasster Transfers dieses Managers. */
+  transferCount: number;
   active: boolean;
 }
 
@@ -152,6 +160,7 @@ export async function getManagerTable(
   }
 
   const transfers = await getTransfersByManager(league.id);
+  const now = Date.now();
 
   const rows: ManagerTableRow[] = data.map((s) => {
     const mid = s.manager_id as string;
@@ -162,6 +171,20 @@ export async function getManagerTable(
       ? reconstructCash(myTransfers, { startBudget: league.startBudget })
       : null;
     const bid = cash != null && teamValue != null ? maxBid(cash, teamValue) : null;
+    const total = cash != null && teamValue != null ? cash + teamValue : null;
+    const liquidity = total != null && total > 0 && cash != null ? cash / total : null;
+
+    // Aktivität: Tage seit dem jüngsten Transfer (aus den vorhandenen Transfers).
+    let lastActiveDays: number | null = null;
+    if (myTransfers && myTransfers.length > 0) {
+      let latest = 0;
+      for (const t of myTransfers) {
+        const ms = t.ts ? Date.parse(t.ts) : NaN;
+        if (!Number.isNaN(ms) && ms > latest) latest = ms;
+      }
+      if (latest > 0) lastActiveDays = Math.max(0, Math.floor((now - latest) / 86_400_000));
+    }
+
     return {
       id: mid,
       name: mgr?.name ?? mid,
@@ -172,6 +195,10 @@ export async function getManagerTable(
       squadSize: (s.squad_size as number) ?? null,
       cash,
       maxBid: bid,
+      total,
+      liquidity,
+      lastActiveDays,
+      transferCount: myTransfers?.length ?? 0,
       active: teamValue != null || (s.points as number) != null,
     };
   });

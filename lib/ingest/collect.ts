@@ -6,6 +6,7 @@ import {
   fetchMarket,
   fetchMeBudget,
   fetchManagerDashboard,
+  fetchManagerSquad,
 } from "../kickbase/endpoints";
 import { politeDelay } from "../kickbase/http";
 import { parseLeagueIds } from "../env";
@@ -130,6 +131,17 @@ async function collectOneLeague(
           snap.points = snap.points ?? dash.tp ?? null;
         } catch {
           // Dashboard optional — Kaderwert bleibt dann null.
+        }
+        await politeDelay();
+      }
+
+      // A2 — Kadergröße (squad.it.length). Auch Spielerstatus für spätere Alerts.
+      if (snap) {
+        try {
+          const squad = await fetchManagerSquad(leagueId, manager.id, { token });
+          snap.squad_size = squad.it.length;
+        } catch {
+          // Squad optional — Kadergröße bleibt dann null.
         }
         await politeDelay();
       }

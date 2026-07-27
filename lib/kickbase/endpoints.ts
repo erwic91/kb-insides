@@ -8,6 +8,7 @@ import {
   LeaguesSelectionSchema,
   MarketSchema,
   ManagerDashboardSchema,
+  SquadSchema,
   type Ranking,
   type Overview,
   type MeBudget,
@@ -15,6 +16,7 @@ import {
   type LeaguesSelection,
   type Market,
   type ManagerDashboard,
+  type Squad,
 } from "./schemas";
 
 /**
@@ -113,6 +115,19 @@ export async function fetchManagerDashboard(
     opts,
   );
   return ManagerDashboardSchema.parse(raw);
+}
+
+/** `/v4/leagues/{lid}/managers/{mid}/squad` — Kader eines Managers (für Kadergröße + Spielerstatus). */
+export async function fetchManagerSquad(
+  leagueId: string,
+  managerId: string,
+  opts: EndpointOptions,
+): Promise<Squad> {
+  const raw = await kbFetch<unknown>(
+    `/v4/leagues/${leagueId}/managers/${managerId}/squad`,
+    opts,
+  );
+  return SquadSchema.parse(raw);
 }
 
 /** `/v4/leagues/{lid}/market` — aktuelles Marktangebot. */

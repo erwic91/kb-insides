@@ -76,6 +76,28 @@ export const ManagerDashboardSchema = z
   .passthrough();
 export type ManagerDashboard = z.infer<typeof ManagerDashboardSchema>;
 
+/** Ein Spieler im Kader (`squad.it[]`). */
+export const SquadPlayerSchema = z
+  .object({
+    i: z.string(), // Spieler-ID
+    n: z.string().optional(), // Nachname
+    pos: z.number().nullish(), // Position
+    mv: z.number().nullish(), // Marktwert
+    st: z.number().nullish(), // Status (0 = fit; >0 = Ausfall/angeschlagen)
+    lst: z.number().nullish(), // Aufstellungs-Status
+    tid: z.string().optional(), // Team-ID
+  })
+  .passthrough();
+
+/** Antwort von `/v4/leagues/{lid}/managers/{mid}/squad`. */
+export const SquadSchema = z
+  .object({
+    it: z.array(SquadPlayerSchema).default([]),
+  })
+  .passthrough();
+export type Squad = z.infer<typeof SquadSchema>;
+export type SquadPlayer = z.infer<typeof SquadPlayerSchema>;
+
 /** Ein Transfer (`it[]`) aus `/v4/leagues/{lid}/managers/{mid}/transfer`. */
 export const TransferItemSchema = z
   .object({
