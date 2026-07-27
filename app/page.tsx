@@ -3,12 +3,14 @@ import {
   resolveLeague,
   getManagerTable,
   getCalibration,
+  getMarket,
   type ManagerTableRow,
 } from "../lib/db/queries";
 import { eur, eurSigned, num, pct } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
 import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
+import DashboardFavorites from "../components/DashboardFavorites";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +38,7 @@ export default async function DashboardPage({
 
   const { day, rows } = await getManagerTable(league);
   const calibration = await getCalibration(league);
+  const marketListings = await getMarket(league);
   // Konto/Maximalgebot sind rekonstruierbar, sobald eine Budget-Basis (Start-
   // Budget) konfiguriert ist. Gerechnet wird ab dem Startzeitpunkt (siehe
   // getManagerTable). Gilt für beide Modi (Draft-Kader ist „gratis").
@@ -151,6 +154,29 @@ export default async function DashboardPage({
         )}
       </div>
 
+      <div className="g-2">
+        <DashboardFavorites listings={marketListings} leagueId={league.id} />
+        <div className="panel">
+          <div className="panel-head">
+            <h3>Schläfer</h3>
+            <span className="count">längste Transfer-Pause</span>
+          </div>
+          <div>
+            {schlaefer.length > 0 ? (
+              schlaefer.map((r) => (
+                <Trow
+                  key={r.id}
+                  name={r.name}
+                  detail={r.lastActiveDays === 0 ? "heute aktiv" : `vor ${r.lastActiveDays} T`}
+                />
+              ))
+            ) : (
+              <div className="mrow muted">Noch keine Transfer-Aktivität erfasst.</div>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="section">
         <div className="section-head">
           <h2>Alle Manager</h2>
@@ -159,26 +185,13 @@ export default async function DashboardPage({
         <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
       </div>
 
-      {(verkaufsdruck.length > 0 || schlaefer.length > 0) && (
+      {verkaufsdruck.length > 0 && (
         <div className="tiles4">
-          {verkaufsdruck.length > 0 && (
-            <InsightTile title="Verkaufsdruck" sub="niedrigste Liquidität">
-              {verkaufsdruck.map((r) => (
-                <Trow key={r.id} name={r.name} detail={`${pct(r.liquidity)} liquide · ${eur(r.cash)}`} />
-              ))}
-            </InsightTile>
-          )}
-          {schlaefer.length > 0 && (
-            <InsightTile title="Schläfer" sub="längste Transfer-Pause">
-              {schlaefer.map((r) => (
-                <Trow
-                  key={r.id}
-                  name={r.name}
-                  detail={r.lastActiveDays === 0 ? "heute aktiv" : `vor ${r.lastActiveDays} T`}
-                />
-              ))}
-            </InsightTile>
-          )}
+          <InsightTile title="Verkaufsdruck" sub="niedrigste Liquidität">
+            {verkaufsdruck.map((r) => (
+              <Trow key={r.id} name={r.name} detail={`${pct(r.liquidity)} liquide · ${eur(r.cash)}`} />
+            ))}
+          </InsightTile>
         </div>
       )}
 

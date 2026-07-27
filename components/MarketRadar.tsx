@@ -115,7 +115,7 @@ export default function MarketRadar({
                         border: "none",
                         cursor: "pointer",
                         fontSize: 16,
-                        color: isFav ? "var(--amber)" : "var(--text-faint)",
+                        color: isFav ? "var(--warn)" : "var(--mute)",
                       }}
                     >
                       {isFav ? "★" : "☆"}

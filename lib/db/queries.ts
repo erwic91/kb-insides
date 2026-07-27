@@ -2,6 +2,8 @@ import { getServiceClient } from "./client";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
 import { START_BUDGET } from "../compute/constants";
 import type { Direction } from "../ingest/transfers";
+import { ensureToken } from "../kickbase/session";
+import { fetchPlayerMarketValue } from "../kickbase/endpoints";
 
 /**
  * Server-seitiger Read-Layer fürs Frontend (M5). Alle Zugriffe laufen über den
@@ -475,6 +477,45 @@ export async function getPlayerDetail(
     latestMv: mvHistory.length > 0 ? mvHistory[mvHistory.length - 1]!.marketValue : null,
     transfers,
   };
+}
+
+export interface PlayerMarketValueCurve {
+  points: { date: string; mv: number }[];
+  low: number | null;
+  high: number | null;
+}
+
+/**
+ * Live-Marktwert-Kurve eines Spielers direkt von Kickbase (365 Tage). Holt sich
+ * ein Token via `ensureToken` und ruft den Endpoint auf. Bei JEDEM Fehler (kein
+ * Token/Env/HTTP/Parse) `null` — die Seite hat einen Fallback aus der DB.
+ */
+export async function getPlayerMarketValueCurve(
+  league: LeagueLite,
+  playerId: string,
+): Promise<PlayerMarketValueCurve | null> {
+  try {
+    const token = await ensureToken();
+    const raw = await fetchPlayerMarketValue(league.id, playerId, "365", { token });
+
+    const points = (raw.it ?? [])
+      .map((p) => {
+        if (p.dt == null || p.mv == null) return null;
+        const d = new Date(p.dt * 86_400_000);
+        if (Number.isNaN(d.getTime())) return null;
+        return { date: d.toISOString(), mv: p.mv };
+      })
+      .filter((p): p is { date: string; mv: number } => p != null)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return {
+      points,
+      low: raw.lmv ?? null,
+      high: raw.hmv ?? null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ---------- §8: Kalibrierung ----------

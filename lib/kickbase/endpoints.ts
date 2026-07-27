@@ -9,6 +9,7 @@ import {
   MarketSchema,
   ManagerDashboardSchema,
   SquadSchema,
+  PlayerMarketValueSchema,
   type Ranking,
   type Overview,
   type MeBudget,
@@ -17,6 +18,7 @@ import {
   type Market,
   type ManagerDashboard,
   type Squad,
+  type PlayerMarketValue,
 } from "./schemas";
 
 /**
@@ -147,4 +149,22 @@ export async function fetchManagerSquad(
 export async function fetchMarket(leagueId: string, opts: EndpointOptions): Promise<Market> {
   const raw = await kbFetch<unknown>(`/v4/leagues/${leagueId}/market`, opts);
   return MarketSchema.parse(raw);
+}
+
+/**
+ * `/v4/leagues/{lid}/players/{pid}/marketvalue/{timeframe}` — Marktwert-Kurve
+ * eines Spielers über den angegebenen Zeitraum (z. B. "365" Tage). Punkte in
+ * `it[]` mit `dt` (epoch-Tage) und `mv`, dazu Low/High/Trend.
+ */
+export async function fetchPlayerMarketValue(
+  leagueId: string,
+  playerId: string,
+  timeframe: string,
+  opts: EndpointOptions,
+): Promise<PlayerMarketValue> {
+  const raw = await kbFetch<unknown>(
+    `/v4/leagues/${leagueId}/players/${playerId}/marketvalue/${timeframe}`,
+    opts,
+  );
+  return PlayerMarketValueSchema.parse(raw);
 }

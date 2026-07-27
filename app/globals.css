@@ -60,10 +60,12 @@ a {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
-.up {
+.up,
+.pos {
   color: var(--gain);
 }
-.down {
+.down,
+.neg {
   color: var(--loss);
 }
 .flat {

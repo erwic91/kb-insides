@@ -33,13 +33,17 @@ export default async function LigaPage({
   const maxTv = byTv[0]?.teamValue ?? 0;
 
   return (
-    <main className="page">
+    <main className="wrap">
+      <div className="crumb">{league.name} · Analyse</div>
       <div className="page-head">
-        <h1>Liga / Analyse</h1>
-        <p className="sub">
-          {league.name}
-          {day != null ? ` · Spieltag ${day}` : ""}
-        </p>
+        <div>
+          <span className="eyebrow">Ligaanalyse</span>
+          <h1>Das Feld</h1>
+          <p className="sub">
+            {league.name}
+            {day != null ? ` · Spieltag ${day}` : ""} · {active.length} aktive Manager
+          </p>
+        </div>
       </div>
 
       <section className="card card-pad">

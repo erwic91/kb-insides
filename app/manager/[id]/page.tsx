@@ -56,17 +56,20 @@ export default async function ManagerPage({
         <Link href={leagueHref("/liga", league.id)}>{league.name}</Link>
       </div>
       <div className="page-head">
-        <h1>
-          {m.name}{" "}
-          {m.isMe && <span className="badge me">du</span>}{" "}
-          {m.teamValue == null && m.points == null && (
-            <span className="badge inactive">inaktiv</span>
-          )}
-        </h1>
-        <p className="sub">
-          {league.name}
-          {m.day != null ? ` · Spieltag ${m.day}` : ""}
-        </p>
+        <div>
+          <span className="eyebrow">Manager-Dossier</span>
+          <h1>
+            {m.name}{" "}
+            {m.isMe && <span className="badge me">du</span>}{" "}
+            {m.teamValue == null && m.points == null && (
+              <span className="badge inactive">inaktiv</span>
+            )}
+          </h1>
+          <p className="sub">
+            {league.name}
+            {m.day != null ? ` · Spieltag ${m.day}` : ""}
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-4">

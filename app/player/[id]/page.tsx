@@ -1,6 +1,11 @@
 import Link from "next/link";
-import { resolveLeague, getPlayerDetail } from "../../../lib/db/queries";
+import {
+  resolveLeague,
+  getPlayerDetail,
+  getPlayerMarketValueCurve,
+} from "../../../lib/db/queries";
 import { eur, eurFull, date } from "../../../lib/format";
+import LineChart from "../../../components/LineChart";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +26,7 @@ export default async function PlayerPage({
 
   if (!league) {
     return (
-      <main className="page">
+      <main className="wrap">
         <div className="empty">
           <h3>Keine Liga aktiv</h3>
           <p>
@@ -32,10 +37,14 @@ export default async function PlayerPage({
     );
   }
 
-  const p = await getPlayerDetail(league, id);
+  const [p, curve] = await Promise.all([
+    getPlayerDetail(league, id),
+    getPlayerMarketValueCurve(league, id),
+  ]);
+
   if (!p) {
     return (
-      <main className="page">
+      <main className="wrap">
         <div className="empty">
           <h3>Spieler nicht gefunden</h3>
           <p>
@@ -48,14 +57,16 @@ export default async function PlayerPage({
   }
 
   const maxMv = Math.max(1, ...p.mvHistory.map((h) => h.marketValue ?? 0));
+  const hasCurve = curve != null && curve.points.length >= 2;
 
   return (
-    <main className="page">
+    <main className="wrap">
       <div className="crumb">
         <Link href={leagueHref("/", league.id)}>Dashboard</Link> ·{" "}
         <Link href={leagueHref("/markt", league.id)}>Marktradar</Link>
       </div>
       <div className="page-head">
+        <span className="eyebrow">SPIELERAKTE</span>
         <h1>{p.name}</h1>
         <p className="sub">
           {league.name}
@@ -82,32 +93,52 @@ export default async function PlayerPage({
         </div>
       </div>
 
-      {p.mvHistory.length > 1 && (
-        <section className="card card-pad section">
-          <p className="card-title">Marktwertverlauf</p>
-          {p.mvHistory.map((h) => (
-            <div className="bar-row" key={h.day}>
-              <div className="name">Spieltag {h.day}</div>
-              <div className="bar-track">
-                <div
-                  className="bar-fill"
-                  style={{ width: `${((h.marketValue ?? 0) / maxMv) * 100}%` }}
-                />
-              </div>
-              <div className="amt">{eur(h.marketValue)}</div>
-            </div>
-          ))}
-        </section>
-      )}
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Marktwertverlauf (365 Tage)</h3>
+          {hasCurve && (
+            <span className="count">
+              Tief {eur(curve!.low)} · Hoch {eur(curve!.high)}
+            </span>
+          )}
+        </div>
+        <div className="card-pad">
+          {hasCurve ? (
+            <LineChart points={curve!.points} />
+          ) : p.mvHistory.length > 1 ? (
+            <>
+              {p.mvHistory.map((h) => (
+                <div className="bar-row" key={h.day}>
+                  <div className="name">Spieltag {h.day}</div>
+                  <div className="bar-track">
+                    <div
+                      className="bar-fill"
+                      style={{ width: `${((h.marketValue ?? 0) / maxMv) * 100}%` }}
+                    />
+                  </div>
+                  <div className="amt">{eur(h.marketValue)}</div>
+                </div>
+              ))}
+            </>
+          ) : (
+            <p className="note">
+              Die Marktwert-Kurve wird noch aufgebaut — sobald genügend Datenpunkte
+              vorliegen, erscheint hier der Verlauf.
+            </p>
+          )}
+        </div>
+      </section>
 
-      <section className="section">
-        <div className="section-head">
-          <h2>Ligaweite Besitzhistorie</h2>
-          <span className="note">Overpay = Preis − MV (sobald MV-Historie vorliegt)</span>
+      <section className="panel">
+        <div className="panel-head">
+          <h3>Ligaweite Besitzhistorie</h3>
+          <span className="count">{p.transfers.length}</span>
         </div>
         {p.transfers.length === 0 ? (
-          <div className="notice">
-            Noch keine Transfers dieses Spielers in {league.name} erfasst.
+          <div className="card-pad">
+            <p className="note">
+              Noch keine Transfers dieses Spielers in {league.name} erfasst.
+            </p>
           </div>
         ) : (
           <div className="table-wrap">

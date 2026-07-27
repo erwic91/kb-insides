@@ -174,3 +174,29 @@ export const MarketSchema = z
   })
   .passthrough();
 export type Market = z.infer<typeof MarketSchema>;
+
+/**
+ * Ein Marktwert-Punkt (`it[]`) aus
+ * `/v4/leagues/{lid}/players/{pid}/marketvalue/{timeframe}`.
+ * Bewusst SEHR tolerant (analog zu `SquadPlayerSchema`): die reale Shape variiert
+ * (Feldtypen, null vs. fehlend). `dt` sind Tage seit 1970-01-01 (epoch-Tage) —
+ * Date = `new Date(dt * 86_400_000)`; `mv` ist der Marktwert an diesem Tag.
+ */
+export const MarketValuePointSchema = z
+  .object({
+    dt: z.coerce.number().nullish(), // Zeitpunkt in epoch-Tagen
+    mv: z.coerce.number().nullish(), // Marktwert
+  })
+  .passthrough();
+export type MarketValuePoint = z.infer<typeof MarketValuePointSchema>;
+
+/** Antwort von `/v4/leagues/{lid}/players/{pid}/marketvalue/{timeframe}`. */
+export const PlayerMarketValueSchema = z
+  .object({
+    it: z.array(MarketValuePointSchema).default([]), // Punkte (aufsteigend)
+    lmv: z.coerce.number().nullish(), // niedrigster Marktwert im Zeitraum
+    hmv: z.coerce.number().nullish(), // höchster Marktwert im Zeitraum
+    trp: z.coerce.number().nullish(), // Trend-/Prozentwert
+  })
+  .passthrough();
+export type PlayerMarketValue = z.infer<typeof PlayerMarketValueSchema>;
