@@ -113,6 +113,12 @@ async function collectOneLeague(
     if (ownId && rows.managers.some((m) => m.id === ownId)) {
       await markIsMe(leagueId, ownId);
     }
+
+    // Basis-Snapshots SOFORT schreiben (Kaderwert/Punkte aus dem Ranking) —
+    // bevor die teure Pro-Manager-Schleife läuft. Bei großen Ligen kann diese
+    // (viele Transfer-Seiten + squad/dashboard) ins Funktions-Timeout laufen;
+    // die Snapshots sind dann trotzdem da. Anreicherung wird später re-upsertet.
+    await upsertManagerSnapshots(rows.snapshots);
     await politeDelay();
 
     const snapById = new Map(rows.snapshots.map((s) => [s.manager_id, s]));
