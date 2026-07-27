@@ -1,0 +1,30 @@
+{
+  "b": 150000000,
+  "i": "6847281",
+  "m": [
+    { "ui": "221035", "uim": "user/42343a368aee430595e0bdf87e1f2c14.png" },
+    { "ui": "1143789", "uim": "user/21ff9ea701fe4149bd2c551ea0403f21.jpeg" },
+    { "ui": "1419095", "uim": "user/fe43f28fbc1149c88783b03b847d5075.jpeg" },
+    { "ui": "1465441", "uim": "user/2b3184c0b104406c9525615ee3445ee1.jpeg" }
+  ],
+  "dt": "2025-12-23T16:16:37Z",
+  "adm": false,
+  "amd": true,
+  "cpi": "1",
+  "cpn": "Bundesliga",
+  "gpm": 2,
+  "hum": false,
+  "ism": true,
+  "isp": false,
+  "isr": true,
+  "lim": "league/c72d677a4cca4702afc695eada37ddb8.jpe",
+  "lnm": "KBLux Liga 2",
+  "mgc": 18,
+  "mgm": 18,
+  "mid": ["221035", "1143789", "1419095", "1465441"],
+  "clpc": 11,
+  "isvf": false,
+  "mppu": 18,
+  "mpst": 0,
+  "rnkm": 1
+}

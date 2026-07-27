@@ -1,21 +1,26 @@
 import { NextResponse } from "next/server";
 import { runCollect } from "../../../../lib/ingest/collect";
 
-// ~20-25 sequential requests per league; give the run room to breathe.
+// Login + Ranking je Liga, sequentiell mit Pausen → genug Zeit geben.
 export const maxDuration = 120;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Vercel Cron target. Vercel sends `Authorization: Bearer <CRON_SECRET>`.
- * We reject anything that does not match CRON_SECRET so the route can only
- * be triggered by the scheduled cron (or an operator holding the secret).
+ * Manueller Trigger für den M2-Collector (Ranking-Ingest über alle Ligen aus
+ * KICKBASE_LEAGUE_IDS). Identische Logik wie der Vercel-Cron
+ * (`/api/cron/collect`), aber zusätzlich per `?secret=` im Browser auslösbar,
+ * damit man den Lauf ohne Terminal anstoßen kann.
+ *
+ * Schutz per CRON_SECRET (Header ODER Query). Kann nach dem produktiven
+ * Aufsetzen des Crons entfernt werden.
  */
 function isAuthorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
   const header = request.headers.get("authorization");
-  return header === `Bearer ${secret}`;
+  if (header === `Bearer ${secret}`) return true;
+  return new URL(request.url).searchParams.get("secret") === secret;
 }
 
 export async function GET(request: Request) {

@@ -1,0 +1,49 @@
+{
+  "it": [
+    {
+      "b": 200250000,
+      "f": "league/c72d677a4cca4702afc695eada37ddb8.jpe",
+      "i": "6847281",
+      "n": "KBLux Liga 2",
+      "bs": 1,
+      "tv": 0,
+      "un": 683,
+      "vr": 4,
+      "adm": false,
+      "cpi": "1",
+      "gpm": 2,
+      "hum": false,
+      "idf": true,
+      "isp": false,
+      "lim": "league/c72d677a4cca4702afc695eada37ddb8.jpe",
+      "lpc": 0,
+      "cpim": "content/file/a9eb2919122b4e248349ba91db351901.png",
+      "isvf": false,
+      "rnkm": 1
+    },
+    {
+      "b": 200010000,
+      "f": "league/fcb54561e4544d20814c3699d0d7f225.jpe",
+      "i": "1762865",
+      "n": "FLF & Friends",
+      "bs": 1,
+      "tv": 0,
+      "un": 4,
+      "vr": 4,
+      "adm": false,
+      "cpi": "1",
+      "gpm": 2,
+      "hum": false,
+      "idf": false,
+      "isp": false,
+      "lim": "league/fcb54561e4544d20814c3699d0d7f225.jpe",
+      "lpc": 0,
+      "cpim": "content/file/a9eb2919122b4e248349ba91db351901.png",
+      "isvf": false,
+      "rnkm": 1
+    }
+  ],
+  "anol": 12,
+  "anopl": 12,
+  "anoprl": 12
+}
