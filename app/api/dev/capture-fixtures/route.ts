@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { captureFixtures } from "../../../../lib/kickbase/captureFixtures";
+import { getServiceClient } from "../../../../lib/db/client";
 
 // Login + ~8 sequentielle Requests mit höflichen Pausen → genug Zeit geben.
 export const maxDuration = 120;
@@ -40,7 +41,22 @@ export async function GET(request: Request) {
 
   try {
     const result = await captureFixtures();
-    return NextResponse.json({ ok: true, ...result });
+
+    // Ergebnis zusaetzlich in Supabase ablegen, damit es serverseitig (ohne
+    // Copy&Paste) ausgelesen werden kann. Fehler hier sind nicht fatal — die
+    // JSON-Antwort bleibt der Fallback.
+    let persisted = false;
+    try {
+      const supabase = getServiceClient();
+      const { error } = await supabase
+        .from("app_settings")
+        .upsert({ key: "__dev_last_capture", value: JSON.stringify(result) }, { onConflict: "key" });
+      persisted = !error;
+    } catch {
+      /* ignore — Fallback ist die JSON-Antwort */
+    }
+
+    return NextResponse.json({ ok: true, persisted, ...result });
   } catch (e) {
     return NextResponse.json(
       { ok: false, error: (e as Error).message },
