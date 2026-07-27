@@ -1,4 +1,5 @@
-import { kbFetch, type KbFetchOptions } from "./http";
+import { kbFetch, politeDelay, type KbFetchOptions } from "./http";
+import { paginateTransfers } from "../ingest/transfers";
 import {
   RankingSchema,
   OverviewSchema,
@@ -60,6 +61,31 @@ export async function fetchTransfers(
     opts,
   );
   return TransfersSchema.parse(raw);
+}
+
+/**
+ * Volle Transferhistorie eines Managers — paginiert über den `start`-Offset
+ * (Seitengröße 25). Für die vollständige Kontorekonstruktion nötig, sobald ein
+ * Manager mehr als 25 Transfers hat.
+ */
+export async function fetchAllTransfers(
+  leagueId: string,
+  managerId: string,
+  opts: EndpointOptions & { maxPages?: number },
+): Promise<Transfers> {
+  const { maxPages, ...fetchOpts } = opts;
+  const items = await paginateTransfers(
+    async (start) => {
+      const q = start > 0 ? `?start=${start}` : "";
+      const raw = await kbFetch<unknown>(
+        `/v4/leagues/${leagueId}/managers/${managerId}/transfer${q}`,
+        fetchOpts,
+      );
+      return TransfersSchema.parse(raw).it;
+    },
+    { maxPages, onPage: politeDelay },
+  );
+  return { u: managerId, it: items };
 }
 
 /** `/v4/leagues/selection` — alle Ligen des Nutzers. */

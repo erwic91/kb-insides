@@ -121,10 +121,10 @@ per Backfill nachgeholt.
 - [x] **M4** — Transfer-Ingest (`lib/ingest/transfers.ts`) + Rechenlogik
   (`lib/compute/reconstruct.ts`: Rekonstruktion, Maximalgebot, Overpay,
   FIFO-Gewinn). An echten Daten getestet.
-- [~] **Checkpoint C** — Selbstkalibrierung schreibt jetzt eine `calibration`-Zeile
-  (Rekonstruktion vs. `/me/budget`) und zeigt sie als Statuszeile im Dashboard.
-  Euro-genau (Δ = 0) erst mit Erfolgsprämien + vollständigen Transfers +
-  laufender Saison; `achievements` ist im Capture angebunden (Pfad-Annahme).
+- [~] **Checkpoint C** — Selbstkalibrierung schreibt eine `calibration`-Zeile
+  (Rekonstruktion vs. `/me/budget`) + Statuszeile im Dashboard. Volle Transfers
+  ✅, Prämien-Endpunkt gefunden (`dashboard.prft`) — nur noch die `prft`-Bedeutung
+  + euro-genaues Δ = 0 fehlen, beides braucht eine **laufende Saison**.
 - [x] **M5** — Frontend an Supabase: eigenes Dark-Theme-Designsystem
   (`app/globals.css`), globaler Liga-Switch (`components/`), Read-Layer
   (`lib/db/queries.ts`) und die Seiten Dashboard, Liga/Analyse, Manager-Detail.
@@ -135,8 +135,9 @@ per Backfill nachgeholt.
   Kadenz-Regler) und Spieler-Detail (MV-Verlauf, ligaweite Besitzhistorie).
 - [x] **M7** — Cron (`vercel.json`, tägl. 05:00 UTC), `CRON_SECRET`-Schutz,
   Backfill-/Collect-Trigger und Betriebs-Runbook (Abschnitt „Deployment & Betrieb").
-- [~] **Discovery-Capture** — ein Live-Lauf probt jetzt Prämien-Endpunkt-Kandidaten
-  + Transfer-Paginierungs-Parameter (Abschnitt oben), um Checkpoint C zu entsperren.
+- [x] **Discovery-Capture** — Live-Lauf ausgewertet: Paginierung = `start`-Offset
+  (umgesetzt), Prämien-Endpunkt = `manager_dashboard` (`prft`). Siehe „Offene
+  Kalibrierungspunkte".
 
 > **Hinweis:** Die fünf Prototyp-HTML-Dateien (`dashboard.html`, `liga.html`,
 > `marktradar.html`, `manager.html`, `player.html`) sind die visuelle Referenz für
@@ -148,16 +149,23 @@ An echten Daten geklärt:
 
 - ✅ **`tty`-Mapping:** `1` = Kauf, `2` = Verkauf. Verifiziert daran, dass bei
   jedem gekauften **und** verkauften Spieler `tty=1` zeitlich vor `tty=2` liegt.
+- ✅ **Transfer-Paginierung (Discovery-Lauf):** Parameter ist **`start`** (Offset,
+  Seitengröße 25). `?start=25` liefert Einträge 26–50 (ältere `dt`); `?page=` und
+  `?max=` werden ignoriert. Umgesetzt in `fetchAllTransfers` (loopt bis <25) +
+  `paginateTransfers` (getestet). Die Rekonstruktion nutzt jetzt die **volle**
+  Historie statt der ersten 25.
+- ✅ **Prämien-Endpunkt (Discovery-Lauf):** `achievements` und `manager_profile`
+  liefern **404**; `manager_performance` (leer post-Reset) und
+  **`manager_dashboard`** liefern 200. Der Prämien-Wert steckt in
+  `dashboard.prft` (+ `mds`/`mdw` je Spieltag). Alle Werte aktuell **0** (Reset).
 
 Noch offen (blockieren die euro-genaue Kalibrierung, Checkpoint C):
 
-- **Transfer-Liste gedeckelt (~25 Einträge).** Bei langer Historie fehlen ältere
-  Transfers → Rekonstruktion unvollständig. Zu klären: Paginierung/Parameter, um
-  die volle Historie zu ziehen.
-- **Erfolgsprämien noch nicht ingested.** Im eigenen Testfall klafft eine Lücke
-  von ~33,0 Mio zwischen Rekonstruktion (167,2 Mio) und `me/budget` — das ist der
-  erwartete Prämien-Posten. `achievements`-Endpunkt (`er`) muss noch abgegriffen
-  werden; offen, ob er **fremde** Prämien liefert (sonst Schätzposten).
+- **Bedeutung von `prft` klären.** Feld gefunden, aber post-Reset 0 → unklar, ob
+  `prft` = Erfolgsprämien oder = Handelsgewinn (Doppelzählungs-Gefahr). Deshalb
+  **noch nicht** in die Geldformel verdrahtet. In laufender Saison an `me/budget`
+  gegenprüfen, dann `prizes` in `reconstructCash` speisen. `mds`-Item-Shape ist
+  post-Reset (leeres Array) ebenfalls erst dann sichtbar.
 - **Saison-Reset.** Aktuelle Daten stammen aus der abgelaufenen Saison 25/26;
   `me/budget` zeigt bereits den zurückgesetzten Kontostand. Euro-genaue
   Kalibrierung ist erst **während einer laufenden Saison** möglich.

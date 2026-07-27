@@ -1,7 +1,7 @@
 import { ensureToken, ensureOwnUserId } from "../kickbase/session";
 import {
   fetchRanking,
-  fetchTransfers,
+  fetchAllTransfers,
   fetchLeaguesSelection,
   fetchMarket,
   fetchMeBudget,
@@ -90,7 +90,7 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
       let ownTransfers: TransferRow[] = [];
       for (const manager of rows.managers) {
         try {
-          const tr = await fetchTransfers(leagueId, manager.id, { token });
+          const tr = await fetchAllTransfers(leagueId, manager.id, { token });
           const transferRows = parseTransfers(tr, leagueId, manager.id);
           await upsertTransfers(transferRows);
           transferCount += transferRows.length;
@@ -121,7 +121,10 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
         try {
           const budget = await fetchMeBudget(leagueId, { token });
           const myActual = budget.b;
-          // prizes = 0 bis der achievements-Endpunkt angebunden ist (Checkpoint C).
+          // prizes = 0 bis Prämien verdrahtet sind. Discovery-Ergebnis: der
+          // Endpunkt ist `/managers/{mid}/dashboard` (Feld `prft`); post-Reset
+          // 0, daher noch nicht in die Geldformel gezogen (Checkpoint C, braucht
+          // laufende Saison zur Bedeutungs-Klärung: Prämien vs. Handelsgewinn).
           const myReconstructed = reconstructCash(ownTransfers, {
             startBudget: START_BUDGET,
           });

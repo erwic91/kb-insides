@@ -186,39 +186,12 @@ export async function captureFixtures(): Promise<CaptureResult> {
     await capture("manager_transfers", `/v4/leagues/${primary}/managers/${mid}/transfer`, token);
     const squad = await capture("manager_squad", `/v4/leagues/${primary}/managers/${mid}/squad`, token);
 
-    // --- Discovery-Proben (Checkpoint C) ---------------------------------
-    // Zwei offene Blocker lassen sich nur an der Live-API klären. Statt zu
-    // raten, greifen wir bei EINEM Lauf mehrere Kandidaten ab; Fehler landen
-    // als { error } im Bundle, sodass genau ein Treffer die Wahrheit zeigt.
-
-    // (a) Erfolgsprämien: Pfad ist unbekannt. Kandidaten der v4-API abgreifen.
-    for (const [name, path] of [
-      ["achievements", `/v4/leagues/${primary}/managers/${mid}/achievements`],
-      ["manager_profile", `/v4/leagues/${primary}/managers/${mid}/profile`],
-      ["manager_performance", `/v4/leagues/${primary}/managers/${mid}/performance`],
-      ["manager_dashboard", `/v4/leagues/${primary}/managers/${mid}/dashboard`],
-    ] as const) {
-      await capture(name, path, token);
-    }
-
-    // (b) Transfer-Paginierung: die Liste scheint bei ~25 gedeckelt. Wir
-    // probieren gängige Query-Parameter; wer die Item-Zahl/den ersten Eintrag
-    // ändert, ist der echte Paginierungs-Parameter.
-    const itemCount = (o: unknown): number =>
-      o && typeof o === "object" && Array.isArray((o as { it?: unknown[] }).it)
-        ? (o as { it: unknown[] }).it.length
-        : -1;
-    const base = itemCount(bundle["manager_transfers"]);
-    for (const [name, path] of [
-      ["transfers_start25", `/v4/leagues/${primary}/managers/${mid}/transfer?start=25`],
-      ["transfers_max100", `/v4/leagues/${primary}/managers/${mid}/transfer?max=100`],
-      ["transfers_page1", `/v4/leagues/${primary}/managers/${mid}/transfer?page=1`],
-    ] as const) {
-      const res = await capture(name, path, token);
-      const n = itemCount(res);
-      const hint = n < 0 ? "Fehler" : n !== base ? `${n} ≠ ${base} → PARAM WIRKT` : `${n} (=Basis)`;
-      log.push(`  ↳ ${name}: ${hint}`);
-    }
+    // Prämien-Endpunkt (Checkpoint C). Per Discovery bestätigt:
+    // `/managers/{mid}/dashboard` liefert 200 mit `prft` (+ `mds`/`mdw` je
+    // Spieltag); `achievements`/`profile` sind 404. Post-Reset sind alle Werte 0
+    // → ein In-Saison-Lauf zeigt die gefüllte `mds`-Shape und klärt, ob `prft`
+    // Erfolgsprämien oder Handelsgewinn ist.
+    await capture("manager_dashboard", `/v4/leagues/${primary}/managers/${mid}/dashboard`, token);
 
     playerId = findId(squad, ["pi", "pid", "playerId", "i", "id"]);
     if (playerId) {
