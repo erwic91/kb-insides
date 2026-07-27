@@ -132,28 +132,37 @@ async function collectOneLeague(
     // Kaderwert; dann aus dem Manager-Dashboard (`tv`/`tp`) nachziehen.
     let transferCount = 0;
     let ownTransfers: TransferRow[] = [];
+    const hasTv = (n: number | null) => n != null && n > 0;
     for (const manager of rows.managers) {
       const snap = snapById.get(manager.id);
-      if (snap && snap.team_value == null) {
-        try {
-          const dash = await fetchManagerDashboard(leagueId, manager.id, { token });
-          snap.team_value = dash.tv ?? null;
-          snap.points = snap.points ?? dash.tp ?? null;
-        } catch {
-          // Dashboard optional — Kaderwert bleibt dann null.
-        }
-        await politeDelay();
-      }
-
-      // A2 — Kadergröße (squad.it.length). Auch Spielerstatus für spätere Alerts.
       if (snap) {
+        // Kadergröße + Kaderwert aus dem Kader: Kaderwert = Σ Marktwerte der
+        // Kaderspieler (die eigentliche Definition, zuverlässiger als ranking.tv,
+        // das bei frisch erstellten Ligen 0 sein kann).
         try {
           const squad = await fetchManagerSquad(leagueId, manager.id, { token });
           snap.squad_size = squad.it.length;
+          if (squad.it.length > 0) {
+            const sum = squad.it.reduce((s, p) => s + (p.mv ?? 0), 0);
+            if (hasTv(sum)) snap.team_value = sum;
+          }
         } catch {
-          // Squad optional — Kadergröße bleibt dann null.
+          // Squad optional.
         }
         await politeDelay();
+
+        // Fallback, falls weder Ranking noch Kader einen Kaderwert lieferten:
+        // Manager-Dashboard (tv/tp). WICHTIG: auch bei team_value === 0 laufen.
+        if (!hasTv(snap.team_value)) {
+          try {
+            const dash = await fetchManagerDashboard(leagueId, manager.id, { token });
+            if (hasTv(dash.tv ?? null)) snap.team_value = dash.tv ?? null;
+            snap.points = snap.points ?? dash.tp ?? null;
+          } catch {
+            // Dashboard optional.
+          }
+          await politeDelay();
+        }
       }
 
       try {

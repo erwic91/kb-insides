@@ -21,6 +21,14 @@ export default function LeagueSwitch({
 
   if (leagues.length === 0) return null;
 
+  const switchTo = (id: string) => {
+    if (id === active) return;
+    router.push(`/?league=${encodeURIComponent(id)}`);
+    // Router-Cache umgehen: sonst zeigt der gleiche Pfad (nur anderer
+    // ?league-Param) teils noch die Daten der vorherigen Liga.
+    router.refresh();
+  };
+
   return (
     <div className="seg" role="group" aria-label="Liga wählen">
       {leagues.map((l) => (
@@ -28,7 +36,7 @@ export default function LeagueSwitch({
           key={l.id}
           className={l.id === active ? "on" : ""}
           aria-pressed={l.id === active}
-          onClick={() => router.push(`/?league=${encodeURIComponent(l.id)}`)}
+          onClick={() => switchTo(l.id)}
         >
           {l.name}
         </button>
