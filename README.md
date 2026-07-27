@@ -23,16 +23,35 @@ pnpm test        # vitest
 pnpm dev         # Next.js dev server
 ```
 
-## Umgebungsvariablen
+## Umgebungsvariablen (hosted-first)
 
-`.env.example` → `.env.local` kopieren und ausfüllen. **Niemals `.env*` committen.**
+Maßgeblicher Ort ist **Vercel** → Project → Settings → Environment Variables.
+Eine lokale `.env.local` (`.env.example` kopieren) ist nur nötig, wenn man Skripte
+lokal fahren will. **Niemals `.env*` committen.**
 
-| Variable | Zweck |
-|---|---|
-| `KICKBASE_EMAIL` / `KICKBASE_PASSWORD` | Login (E-Mail/PW müssen in der Kickbase-App gesetzt sein) |
-| `KICKBASE_LEAGUE_IDS` | kommaseparierte Liga-IDs, z. B. `123,456` |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Supabase-Zugriff (serverseitig) |
-| `CRON_SECRET` | schützt `/api/cron/collect` (Vercel setzt es in Prod automatisch) |
+| Variable | Zweck | Woher |
+|---|---|---|
+| `KICKBASE_EMAIL` / `KICKBASE_PASSWORD` | Login (E-Mail/PW müssen in der Kickbase-App gesetzt sein) | selbst vergeben |
+| `KICKBASE_LEAGUE_IDS` | kommaseparierte Liga-IDs, z. B. `123,456` | selbst vergeben |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Supabase-Zugriff (serverseitig) | Supabase → Settings → API |
+| `CRON_SECRET` | schützt `/api/cron/collect` + `/api/dev/capture-fixtures` | Vercel setzt es in Prod automatisch; für manuelles Auslösen eigenen Wert vergeben |
+
+> In **Supabase** selbst werden keine App-Env-Variablen gesetzt — dort nur das
+> Projekt anlegen und `Project URL` + `service_role`-Key ablesen und nach Vercel kopieren.
+
+### Fixture-Abgriff ohne lokalen Lauf (Checkpoint B)
+
+Nach dem Deploy die geschützte Route einmal auslösen — läuft im Vercel-Deployment
+mit den dort gesetzten Variablen:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://<deine-app>.vercel.app/api/dev/capture-fixtures
+```
+
+Die (token-redigierte) JSON-Antwort zeigt die echten Kickbase-Feldnamen und wird
+zu den Dateien unter `/fixtures/` — Grundlage für die Parser ab M2. Alternativ
+lokal: `pnpm capture-fixtures`.
 
 ## Datenbank
 
@@ -43,9 +62,10 @@ Tabellen ohne öffentliche Policies.
 ## Projektstatus (Meilensteine)
 
 - [x] **M0** — Projektgerüst (Next.js, Supabase-Client, vitest, vercel.json, Migration)
-- [x] **M1 (Code)** — Kickbase-Auth-Client + `scripts/smoke.ts` + `scripts/capture-fixtures.ts`
-  — **offen:** Live-Login ausführen, sobald der Container die Env-Variablen sieht:
-  `pnpm smoke` → danach `pnpm capture-fixtures` (Checkpoint B)
+- [x] **M1 (Code)** — Kickbase-Auth-Client + `scripts/smoke.ts` + Fixture-Capture
+  (`lib/kickbase/captureFixtures.ts`, geteilt von Skript und Route)
+  — **offen (Checkpoint B):** In Vercel Env-Variablen setzen + deployen, dann
+  `GET /api/dev/capture-fixtures` einmal auslösen und die JSON-Antwort committen.
 - [ ] **M2** — Schema-Ingest (Ranking → manager_snapshots)
 - [ ] **M3** — Backfill aller Spieltage
 - [ ] **M4** — Transfers + Kontorekonstruktion + Kalibrierung

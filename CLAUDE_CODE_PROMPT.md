@@ -20,7 +20,7 @@ Die vollständige Fachlogik steht in **`SPEC.md`** — lies sie zuerst und behan
 
 ## 2. Verbindliche Regeln (Guardrails)
 
-1. **Secrets niemals committen.** Alle Zugangsdaten in `.env.local` (lokal) bzw. Vercel-Env-Variablen. `.env*` gehört in `.gitignore`. Kein Passwort, Token oder Key im Code oder in Commits.
+1. **Secrets niemals committen.** Zugangsdaten gehören in die **Vercel-Env-Variablen** (Project → Settings → Environment Variables) — das ist der maßgebliche Ort für Betrieb und Deployment. `.env.local` ist nur eine optionale lokale Bequemlichkeit; wer nichts lokal ausführt, braucht sie nicht. `.env*` gehört in `.gitignore`. Kein Passwort, Token oder Key im Code oder in Commits.
 2. **Inoffizielle API respektvoll behandeln:** 1 Lauf/Tag, sequvia Requests mit kleiner Pause, exponentielles Backoff bei Fehlern, realistischer User-Agent, bei Sperr-/403-/429-Signalen abbrechen statt hämmern.
 3. **Keine Fake-/Demo-Daten in Produktionspfaden.** Die Prototyp-Zahlen sind nur visuelle Referenz. Live-Daten kommen aus Supabase; Tests laufen gegen Fixtures.
 4. **Nach jedem Meilenstein:** `pnpm typecheck`, `pnpm test`, dann committen mit aussagekräftiger Message. Erst dann weiter.
@@ -45,6 +45,12 @@ CRON_SECRET=
 ```
 
 Lege eine `.env.example` mit allen Keys (ohne Werte) an.
+
+**Wo die Werte hingehören (hosted-first):**
+- Alle sechs Variablen werden in **Vercel** gesetzt (Project → Settings → Environment Variables), Scope Production (für den Cron) und Preview.
+- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` werden **in Supabase** abgelesen (Project Settings → API: „Project URL" bzw. „service_role"-Key) und nach Vercel kopiert. In Supabase selbst müssen keine App-Env-Variablen gesetzt werden (kein Edge-Function-Einsatz — der Server läuft als Next.js-Route auf Vercel).
+- `CRON_SECRET` setzt Vercel für den Cron automatisch; für manuelles Auslösen geschützter Routen einen eigenen Wert vergeben.
+- Eine lokale `.env.local` ist nur nötig, wenn man Skripte lokal fahren will — für den reinen Cloud-/Vercel-Betrieb nicht erforderlich.
 
 ## 4. Repo-Struktur (Vorschlag)
 
@@ -121,10 +127,10 @@ Setze das Schema aus **SPEC §5** als Postgres-Migration um (`/supabase/migratio
 ## 10. Meilensteine (autonom abarbeiten, an 🔴 anhalten)
 
 **M0 — Projektgerüst.** Next.js + TS + pnpm, Supabase-Client, `.env.example`, `.gitignore`, `vercel.json`, vitest. `pnpm typecheck` grün. Commit.
-🔴 **HUMAN CHECKPOINT A:** Bitte den Menschen, `.env.local` mit Kickbase-Zugangsdaten, `KICKBASE_LEAGUE_IDS` und Supabase-URL/Service-Key zu füllen, und ein Supabase-Projekt anzulegen. Warte auf Bestätigung.
+🔴 **HUMAN CHECKPOINT A:** Bitte den Menschen, ein **Supabase-Projekt** anzulegen und die sechs Env-Variablen in **Vercel** (Project → Settings → Environment Variables) zu setzen: Kickbase-Zugangsdaten, `KICKBASE_LEAGUE_IDS`, `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` (aus Supabase → Settings → API), `CRON_SECRET`. Kein lokales `.env.local` nötig. Warte auf Bestätigung.
 
 **M1 — Auth + Smoke-Test.** Kickbase-`login`/`refresh`, Token-Persistenz in `kb_auth`. Smoke-Skript: einloggen, `/me` bzw. `overview` abrufen, Liga-ID + Startbudget ausgeben. Akzeptanz: echter Login liefert Token, Liga-ID stimmt.
-🔴 **HUMAN CHECKPOINT B:** Bitte den Menschen, `scripts/capture-fixtures.sh` mit gültigem Token laufen zu lassen und die JSON unter `/fixtures/` zu committen. Danach baust du alle Parser/Tests gegen diese Fixtures.
+🔴 **HUMAN CHECKPOINT B:** Fixture-Abgriff — **hosted, ohne lokalen Lauf.** Nach dem Vercel-Deploy löst der Mensch die geschützte Route `GET /api/dev/capture-fixtures` einmal aus (mit `CRON_SECRET`) und schickt die JSON-Antwort zurück; Claude schreibt daraus die (token-redigierten) Dateien unter `/fixtures/` und committet sie. Alternativ lokal via `pnpm capture-fixtures` (nutzt dieselbe Logik in `lib/kickbase/captureFixtures.ts`). Danach baust du alle Parser/Tests gegen diese Fixtures.
 
 **M2 — Schema + Ranking-Ingest.** Migration aus §5 anwenden. `/ranking` für den aktuellen Spieltag holen, Manager + `manager_snapshots` (Kaderwert, Punkte, Kadergröße) upserten. Tests gegen Fixture. Commit.
 
