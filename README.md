@@ -31,7 +31,7 @@ Maßgeblicher Ort ist **Vercel** → Project → Settings → Environment Variab
 | Variable | Zweck | Woher |
 |---|---|---|
 | `KICKBASE_EMAIL` / `KICKBASE_PASSWORD` | Login (E-Mail/PW müssen in der Kickbase-App gesetzt sein) | selbst vergeben |
-| `KICKBASE_LEAGUE_IDS` | kommaseparierte Liga-IDs, z. B. `123,456` | selbst vergeben |
+| `KICKBASE_LEAGUE_IDS` | **optional.** Der Collector greift automatisch alle Ligen aus `/selection` ab; diese Variable ist nur noch ein Zusatz/Override (kommasepariert, z. B. `123,456`) | selbst vergeben |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Supabase-Zugriff (serverseitig) | Supabase → Settings → API |
 | `CRON_SECRET` | schützt `/api/cron/collect` + `/api/dev/capture-fixtures` | Vercel setzt es in Prod automatisch; für manuelles Auslösen eigenen Wert vergeben |
 
@@ -166,9 +166,16 @@ Noch offen (blockieren die euro-genaue Kalibrierung, Checkpoint C):
   **noch nicht** in die Geldformel verdrahtet. In laufender Saison an `me/budget`
   gegenprüfen, dann `prizes` in `reconstructCash` speisen. `mds`-Item-Shape ist
   post-Reset (leeres Array) ebenfalls erst dann sichtbar.
-- **Saison-Reset.** Aktuelle Daten stammen aus der abgelaufenen Saison 25/26;
-  `me/budget` zeigt bereits den zurückgesetzten Kontostand. Euro-genaue
-  Kalibrierung ist erst **während einer laufenden Saison** möglich.
+- **Start-Budget-Semantik (neuer Fund an der aktiven Liga FFL).** In `/selection`
+  ist `b` das **aktuelle Guthaben**, nicht das Startbudget: FFL hat `b=52,8 Mio`
+  (aktuell) bei `overview.b=50 Mio` (Konfig-Start). Für reset-Ligen fallen beide
+  zusammen, für aktive nicht. `reconstructCash` braucht das **echte** Startbudget
+  je Liga → an FFLs Transfers + `me/budget` empirisch bestimmen (welcher Wert
+  macht Δ = `prft`?), dann per-Liga statt globaler `START_BUDGET`-Konstante.
+- **Saison-Reset (KBLux/FLF).** Deren Daten stammen aus der abgelaufenen Saison
+  25/26; `me/budget` zeigt den zurückgesetzten Kontostand. Euro-genaue
+  Kalibrierung dort erst in der nächsten laufenden Saison — **FFL läuft aber
+  jetzt** und ist damit der Testfall für Checkpoint C.
 - Maximalgebot-Faktor: 33 % exakt oder ⅓ (33,33 %)? (Konstante `MAX_BID_FACTOR`.)
 - Maximalgebot: Kaderwert **vor** oder **nach** dem gedachten Kauf?
 - `tv` bei historischem `dayNumber`: damaliger oder aktueller Wert?

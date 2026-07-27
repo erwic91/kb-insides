@@ -52,21 +52,30 @@ export interface LeagueIngestResult {
 }
 
 export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
-  const leagueIds = parseLeagueIds();
-  if (leagueIds.length === 0) {
-    throw new Error("KICKBASE_LEAGUE_IDS ist leer — keine Liga zum Einsammeln.");
-  }
-
   const token = await ensureToken();
   const ownId = await ensureOwnUserId();
 
-  // Alle Ligen des Nutzers in `leagues` schreiben (Liga-Switch füllt sich).
+  // /selection zuerst: schreibt ALLE Ligen des Nutzers in `leagues` (Switch
+  // füllt sich) UND liefert die Liste, die eingesammelt wird — so wird jede neu
+  // beigetretene Liga automatisch erfasst, ohne KICKBASE_LEAGUE_IDS zu pflegen.
+  let discovered: string[] = [];
   try {
     const selection = await fetchLeaguesSelection({ token });
-    await upsertLeagues(parseLeaguesSelection(selection));
+    const parsed = parseLeaguesSelection(selection);
+    await upsertLeagues(parsed);
+    discovered = parsed.map((l) => l.id);
     await politeDelay();
   } catch {
-    // /selection nicht kritisch — Ranking legt die Primärliga ohnehin an.
+    // /selection nicht kritisch — Fallback ist KICKBASE_LEAGUE_IDS.
+  }
+
+  // KICKBASE_LEAGUE_IDS bleibt optionaler Override/Zusatz (Union, dedupliziert).
+  const configured = parseLeagueIds();
+  const leagueIds = [...new Set([...discovered, ...configured])];
+  if (leagueIds.length === 0) {
+    throw new Error(
+      "Keine Ligen zum Einsammeln: /selection lieferte nichts und KICKBASE_LEAGUE_IDS ist leer.",
+    );
   }
 
   const leagues: LeagueIngestResult[] = [];
