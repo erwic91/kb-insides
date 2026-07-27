@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { runCollect, runCollectLeague } from "../../../lib/ingest/collect";
+import { getServiceClient } from "../../../lib/db/client";
 
 // Ranking + Transfers (paginiert) + Markt je Liga → großzügiges Zeitbudget.
 export const maxDuration = 120;
@@ -30,6 +31,20 @@ export async function POST(request: Request) {
     const result = league
       ? { leagues: [await runCollectLeague(league)] }
       : await runCollect();
+
+    // Diagnose: letztes Ergebnis (inkl. warnings) ablegen, ohne den Lauf zu
+    // gefährden — so lassen sich stille Fehler serverseitig auslesen.
+    try {
+      await getServiceClient()
+        .from("app_settings")
+        .upsert(
+          { key: "__last_collect", value: JSON.stringify({ at: new Date().toISOString(), ...result }) },
+          { onConflict: "key" },
+        );
+    } catch {
+      /* nicht kritisch */
+    }
+
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     return NextResponse.json({ ok: false, error: (e as Error).message }, { status: 500 });

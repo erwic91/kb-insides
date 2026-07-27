@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { RankingSchema, OverviewSchema, MeBudgetSchema } from "./schemas";
+import { RankingSchema, OverviewSchema, MeBudgetSchema, SquadSchema } from "./schemas";
 
 function fixture(name: string): unknown {
   return JSON.parse(readFileSync(resolve(process.cwd(), `fixtures/${name}.json`), "utf8"));
@@ -27,5 +27,20 @@ describe("Kickbase-Schemas gegen echte Fixtures", () => {
   it("MeBudgetSchema liest den exakten Kontostand", () => {
     const parsed = MeBudgetSchema.parse(fixture("me_budget"));
     expect(parsed.b).toBe(200250000);
+  });
+
+  it("SquadSchema wirft NICHT bei nicht-leeren Kadern mit unsauberen Typen", () => {
+    // Realistische Varianz: numerische ID, null-Felder, String-Zahlen.
+    const raw = {
+      it: [
+        { i: 118, n: null, pos: "3", mv: 12357935, tid: 5, extra: "x" },
+        { i: "2141", mv: null },
+      ],
+    };
+    const parsed = SquadSchema.parse(raw);
+    expect(parsed.it).toHaveLength(2);
+    expect(parsed.it[0]?.mv).toBe(12357935);
+    // leerer Kader bleibt 0
+    expect(SquadSchema.parse({ it: [] }).it).toHaveLength(0);
   });
 });

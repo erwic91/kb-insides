@@ -76,16 +76,21 @@ export const ManagerDashboardSchema = z
   .passthrough();
 export type ManagerDashboard = z.infer<typeof ManagerDashboardSchema>;
 
-/** Ein Spieler im Kader (`squad.it[]`). */
+/**
+ * Ein Spieler im Kader (`squad.it[]`). Bewusst SEHR tolerant: die echte Shape
+ * variiert (Feldtypen, null vs. fehlend), und wir brauchen nur Anzahl (Länge)
+ * + Marktwert. Ein strenges Schema warf bei nicht-leeren Kadern → squad_size
+ * blieb null. `coerce` + `nullish` + `passthrough` lässt reale Objekte durch.
+ */
 export const SquadPlayerSchema = z
   .object({
-    i: z.string(), // Spieler-ID
-    n: z.string().optional(), // Nachname
-    pos: z.number().nullish(), // Position
-    mv: z.number().nullish(), // Marktwert
-    st: z.number().nullish(), // Status (0 = fit; >0 = Ausfall/angeschlagen)
-    lst: z.number().nullish(), // Aufstellungs-Status
-    tid: z.string().optional(), // Team-ID
+    i: z.coerce.string().nullish(), // Spieler-ID
+    n: z.coerce.string().nullish(), // Nachname
+    pos: z.coerce.number().nullish(), // Position
+    mv: z.coerce.number().nullish(), // Marktwert
+    st: z.coerce.number().nullish(), // Status (0 = fit; >0 = Ausfall/angeschlagen)
+    lst: z.coerce.number().nullish(), // Aufstellungs-Status
+    tid: z.coerce.string().nullish(), // Team-ID
   })
   .passthrough();
 
