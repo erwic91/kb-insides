@@ -19,28 +19,32 @@ export default function Topbar({
   const pathname = usePathname();
   const params = useSearchParams();
   const league = params.get("league");
-  // Liga in Navigationslinks mitführen (außer Dashboard bleibt Einstieg).
+  // Liga in Navigationslinks mitführen (Dashboard bleibt der Einstieg).
   const withLeague = (href: string) =>
     league && href !== "/" ? `${href}?league=${encodeURIComponent(league)}` : href;
 
   return (
     <header className="topbar">
-      <Link href="/" className="brand">
-        <span className="brand-dot" />
-        Ligamonitor
-      </Link>
-      <nav className="nav">
-        {NAV.map((n) => {
-          const active = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
-          return (
-            <Link key={n.href} href={withLeague(n.href)} className={active ? "active" : ""}>
-              {n.label}
-            </Link>
-          );
-        })}
-      </nav>
-      <div className="topbar-spacer" />
-      <LeagueSwitch leagues={leagues} defaultId={league ?? undefined} />
+      <div className="topbar-in">
+        <Link href="/" className="brand">
+          Liga<span>monitor</span>
+        </Link>
+        <nav className="nav">
+          {NAV.map((n) => {
+            const active = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
+            return (
+              <Link key={n.href} href={withLeague(n.href)} className={active ? "on" : ""}>
+                {n.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="topbar-spacer" />
+        <div className="lswitch">
+          <span className="lbl">Liga</span>
+          <LeagueSwitch leagues={leagues} defaultId={league ?? undefined} />
+        </div>
+      </div>
     </header>
   );
 }

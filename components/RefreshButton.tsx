@@ -105,11 +105,12 @@ export default function RefreshButton({ leagueId }: { leagueId: string }) {
             placeholder="CRON_SECRET"
             autoFocus
             style={{
-              background: "var(--bg-elev-2)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: "6px 10px",
-              color: "var(--text)",
+              background: "var(--paper)",
+              border: "1px solid var(--line)",
+              borderRadius: 3,
+              padding: "7px 10px",
+              color: "var(--ink)",
+              fontFamily: "var(--mono)",
               fontSize: 13,
               width: 220,
             }}
@@ -125,7 +126,7 @@ export default function RefreshButton({ leagueId }: { leagueId: string }) {
       )}
       {message && (
         <span
-          className={status === "error" ? "neg" : "muted"}
+          className={status === "error" ? "down" : "muted"}
           style={{ fontSize: 12, maxWidth: 320, textAlign: "right" }}
         >
           {message}
