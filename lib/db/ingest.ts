@@ -24,6 +24,22 @@ export async function getLeagueTrackingSince(leagueId: string): Promise<string |
   return (data?.tracking_since as string) ?? null;
 }
 
+/** Budget-Basis einer Liga: Startpunkt + Start-Budget (für Rekonstruktion). */
+export async function getLeagueMoneyBasis(
+  leagueId: string,
+): Promise<{ trackingSince: string | null; startBudget: number | null }> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("leagues")
+    .select("tracking_since, start_budget")
+    .eq("id", leagueId)
+    .maybeSingle();
+  return {
+    trackingSince: (data?.tracking_since as string) ?? null,
+    startBudget: (data?.start_budget as number) ?? null,
+  };
+}
+
 export interface LeagueSettingsInput {
   game_mode?: number | null;
   start_budget?: number | null;

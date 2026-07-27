@@ -27,7 +27,7 @@ import {
   upsertPlayerMv,
   upsertCalibration,
   markIsMe,
-  getLeagueTrackingSince,
+  getLeagueMoneyBasis,
 } from "../db/ingest";
 
 /**
@@ -52,15 +52,15 @@ export interface LeagueIngestResult {
   market?: number;
   calibrationDelta?: number | null;
   error?: string;
+  /** Stille Pro-Manager-Fehler (squad/dashboard/transfer), max. 5. */
+  warnings?: string[];
 }
 
-export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
-  const token = await ensureToken();
-  const ownId = await ensureOwnUserId();
-
-  // /selection zuerst: schreibt ALLE Ligen des Nutzers in `leagues` (Switch
-  // füllt sich) UND liefert die Liste, die eingesammelt wird — so wird jede neu
-  // beigetretene Liga automatisch erfasst, ohne KICKBASE_LEAGUE_IDS zu pflegen.
+/**
+ * Ermittelt alle einzusammelnden Ligen: /selection (alle Ligen des Nutzers,
+ * wird zugleich in `leagues` upgesertet) vereint mit KICKBASE_LEAGUE_IDS.
+ */
+export async function discoverLeagues(token: string): Promise<string[]> {
   let discovered: string[] = [];
   try {
     const selection = await fetchLeaguesSelection({ token });
@@ -71,10 +71,15 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
   } catch {
     // /selection nicht kritisch — Fallback ist KICKBASE_LEAGUE_IDS.
   }
-
-  // KICKBASE_LEAGUE_IDS bleibt optionaler Override/Zusatz (Union, dedupliziert).
   const configured = parseLeagueIds();
-  const leagueIds = [...new Set([...discovered, ...configured])];
+  return [...new Set([...discovered, ...configured])];
+}
+
+export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
+  const token = await ensureToken();
+  const ownId = await ensureOwnUserId();
+
+  const leagueIds = await discoverLeagues(token);
   if (leagueIds.length === 0) {
     throw new Error(
       "Keine Ligen zum Einsammeln: /selection lieferte nichts und KICKBASE_LEAGUE_IDS ist leer.",
@@ -124,14 +129,18 @@ async function collectOneLeague(
 
     const snapById = new Map(rows.snapshots.map((s) => [s.manager_id, s]));
 
-    // Monitoring-Startpunkt: nur Transfers ab hier laden (bounded Paginierung).
-    const trackingSince = await getLeagueTrackingSince(leagueId);
+    // Budget-Basis: Startpunkt (Transfer-Cutoff) + Start-Budget (Kalibrierung).
+    const { trackingSince, startBudget } = await getLeagueMoneyBasis(leagueId);
 
     // M4 — Transfers je Manager (volle Historie via ?start-Paginierung) +
     // Kaderwert-Anreicherung: früh in der Saison führt das Ranking keinen
     // Kaderwert; dann aus dem Manager-Dashboard (`tv`/`tp`) nachziehen.
     let transferCount = 0;
     let ownTransfers: TransferRow[] = [];
+    const warnings: string[] = []; // stille Fehler surfacen (Debugging)
+    const warn = (msg: string) => {
+      if (warnings.length < 5) warnings.push(msg);
+    };
     const hasTv = (n: number | null) => n != null && n > 0;
     for (const manager of rows.managers) {
       const snap = snapById.get(manager.id);
@@ -146,8 +155,8 @@ async function collectOneLeague(
             const sum = squad.it.reduce((s, p) => s + (p.mv ?? 0), 0);
             if (hasTv(sum)) snap.team_value = sum;
           }
-        } catch {
-          // Squad optional.
+        } catch (e) {
+          warn(`squad ${manager.id}: ${(e as Error).message}`);
         }
         await politeDelay();
 
@@ -158,8 +167,8 @@ async function collectOneLeague(
             const dash = await fetchManagerDashboard(leagueId, manager.id, { token });
             if (hasTv(dash.tv ?? null)) snap.team_value = dash.tv ?? null;
             snap.points = snap.points ?? dash.tp ?? null;
-          } catch {
-            // Dashboard optional.
+          } catch (e) {
+            warn(`dashboard ${manager.id}: ${(e as Error).message}`);
           }
           await politeDelay();
         }
@@ -174,8 +183,8 @@ async function collectOneLeague(
         await upsertTransfers(transferRows);
         transferCount += transferRows.length;
         if (manager.id === ownId) ownTransfers = transferRows;
-      } catch {
-        // Manager-Transfer-Fehler ignorieren, nächster Manager.
+      } catch (e) {
+        warn(`transfer ${manager.id}: ${(e as Error).message}`);
       }
       await politeDelay();
     }
@@ -204,12 +213,12 @@ async function collectOneLeague(
       try {
         const budget = await fetchMeBudget(leagueId, { token });
         const myActual = budget.b;
-        // prizes = 0 bis Prämien verdrahtet sind. Discovery-Ergebnis: der
-        // Endpunkt ist `/managers/{mid}/dashboard` (Feld `prft`); post-Reset
-        // 0, daher noch nicht in die Geldformel gezogen (Checkpoint C, braucht
-        // laufende Saison zur Bedeutungs-Klärung: Prämien vs. Handelsgewinn).
+        // Rekonstruktion mit dem tatsächlichen Liga-Start-Budget (nicht der
+        // globalen Konstante) und den ab Startpunkt gefilterten Transfers.
+        // prizes = 0 bis Boni verdrahtet sind (Checkpoint C, braucht Prämien-
+        // /Bonus-Daten der laufenden Saison).
         const myReconstructed = reconstructCash(ownTransfers, {
-          startBudget: START_BUDGET,
+          startBudget: startBudget ?? START_BUDGET,
         });
         calibrationDelta = myReconstructed - myActual;
         await upsertCalibration({
@@ -234,6 +243,7 @@ async function collectOneLeague(
       transfers: transferCount,
       market: marketCount,
       calibrationDelta,
+      warnings: warnings.length > 0 ? warnings : undefined,
     };
   } catch (e) {
     return { leagueId, error: (e as Error).message };

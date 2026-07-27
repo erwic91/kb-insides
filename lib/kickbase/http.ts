@@ -7,8 +7,9 @@ const USER_AGENT =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 " +
   "(KHTML, like Gecko) Kickbase/6.0 Mobile/15E148";
 
-/** HTTP-Status, die als Sperr-/Rate-Limit-Signal gelten → sofort abbrechen. */
-const BLOCK_STATUSES = new Set([403, 429]);
+/** Echte Sperre → sofort abbrechen (nicht retryen). 429 gehört NICHT hierher:
+ * das ist ein Rate-Limit und wird mit Backoff/Retry-After erneut versucht. */
+const BLOCK_STATUSES = new Set([403]);
 
 export interface KbFetchOptions {
   method?: "GET" | "POST";
@@ -31,7 +32,8 @@ export function politeDelay(ms = 500, sleep = defaultSleep): Promise<void> {
 
 /**
  * Kickbase-HTTP mit exponentiellem Backoff bei transienten Fehlern.
- * Bricht bei 403/429 sofort ab (KickbaseBlockedError) statt zu retryen.
+ * Bricht nur bei 403 sofort ab (KickbaseBlockedError); 429 (Rate-Limit) und 5xx
+ * werden mit Backoff/Retry-After erneut versucht.
  */
 export async function kbFetch<T = unknown>(
   path: string,
@@ -73,12 +75,20 @@ export async function kbFetch<T = unknown>(
         return (text ? JSON.parse(text) : {}) as T;
       }
 
-      // 5xx → transient, retryen. 4xx (außer Block) → nicht retryen.
-      if (res.status >= 500 && attempt < maxRetries) {
+      // 429 (Rate-Limit) oder 5xx → transient, mit Backoff erneut versuchen.
+      // Bei 429 nach Möglichkeit den Retry-After-Header honorieren.
+      if ((res.status === 429 || res.status >= 500) && attempt < maxRetries) {
         lastErr = new KickbaseHttpError(res.status, path);
-        await sleepImpl(backoffMs(attempt));
+        const retryAfter = Number(res.headers.get("retry-after"));
+        const wait =
+          res.status === 429 && Number.isFinite(retryAfter) && retryAfter > 0
+            ? retryAfter * 1000
+            : backoffMs(attempt);
+        await sleepImpl(wait);
         continue;
       }
+
+      // 4xx (außer Block) → nicht retryen.
 
       const errBody = await res.text().catch(() => undefined);
       throw new KickbaseHttpError(res.status, path, errBody);

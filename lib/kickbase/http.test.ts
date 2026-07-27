@@ -19,12 +19,22 @@ describe("kbFetch", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("bricht bei 429 sofort ab (kein Retry)", async () => {
+  it("retryt bei 429 (Rate-Limit) statt sofort abzubrechen", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(429, {}));
-    await expect(kbFetch("/x", { fetchImpl, sleepImpl: noSleep })).rejects.toBeInstanceOf(
-      KickbaseBlockedError,
-    );
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    await expect(
+      kbFetch("/x", { fetchImpl, sleepImpl: noSleep, maxRetries: 2 }),
+    ).rejects.toBeInstanceOf(KickbaseHttpError);
+    expect(fetchImpl).toHaveBeenCalledTimes(3); // 1 + 2 Retries
+  });
+
+  it("erholt sich nach transientem 429", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(429, {}))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    const res = await kbFetch<{ ok: boolean }>("/x", { fetchImpl, sleepImpl: noSleep });
+    expect(res.ok).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("bricht bei 403 sofort ab (kein Retry)", async () => {

@@ -11,6 +11,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 let cached: SupabaseClient | null = null;
 
 export function getServiceClient(): SupabaseClient {
+  // Harter Schutz: der Service-Role-Key darf nie im Browser laufen. Sollte diese
+  // Datei je versehentlich in ein Client-Bundle geraten, schlägt es hier fehl.
+  if (typeof window !== "undefined") {
+    throw new Error("getServiceClient() ist server-only und darf nicht im Browser laufen.");
+  }
   if (cached) return cached;
 
   const url = process.env.SUPABASE_URL;
