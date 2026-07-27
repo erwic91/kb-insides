@@ -127,6 +127,7 @@ export const LeagueSelectionItemSchema = z
     n: z.string(), // Name
     b: z.number().optional(), // eigenes Budget in dieser Liga
     idf: z.boolean().optional(), // is default league
+    gpm: z.number().optional(), // Spielmodus: 2 = Manager-Liga, 1 = Classic/Public
   })
   .passthrough();
 

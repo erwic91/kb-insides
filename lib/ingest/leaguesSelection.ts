@@ -6,6 +6,7 @@ export interface LeagueSelectionRow {
   name: string;
   start_budget: number;
   is_default: boolean;
+  game_mode: number | null;
 }
 
 /**
@@ -22,5 +23,6 @@ export function parseLeaguesSelection(
     name: l.n,
     start_budget: l.b ?? START_BUDGET,
     is_default: Boolean(l.idf),
+    game_mode: l.gpm ?? null,
   }));
 }

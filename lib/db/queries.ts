@@ -15,6 +15,8 @@ export interface LeagueLite {
   name: string;
   startBudget: number;
   isDefault: boolean;
+  /** Kickbase-Spielmodus: 2 = Manager-Liga (Konto rekonstruierbar), 1 = Classic. */
+  gameMode: number | null;
 }
 
 export interface ManagerTableRow {
@@ -62,7 +64,7 @@ export async function getLeagues(): Promise<LeagueLite[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("leagues")
-    .select("id, name, start_budget, is_default")
+    .select("id, name, start_budget, is_default, game_mode")
     .order("name");
   if (error || !data) return [];
   return data.map((l) => ({
@@ -70,6 +72,7 @@ export async function getLeagues(): Promise<LeagueLite[]> {
     name: l.name as string,
     startBudget: (l.start_budget as number) ?? START_BUDGET,
     isDefault: Boolean(l.is_default),
+    gameMode: (l.game_mode as number) ?? null,
   }));
 }
 

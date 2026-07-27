@@ -61,4 +61,17 @@ describe("parseLeaguesSelection", () => {
     const flf = rows.find((r) => r.id === "1762865");
     expect(flf?.is_default).toBe(false);
   });
+
+  it("übernimmt den Spielmodus (gpm) — 2 = Manager-Liga, 1 = Classic", () => {
+    const parsed = parseLeaguesSelection({
+      it: [
+        { i: "1", n: "Manager-Liga", b: 200000000, idf: true, gpm: 2 },
+        { i: "2", n: "Classic-Liga", b: 50000000, idf: false, gpm: 1 },
+        { i: "3", n: "Ohne gpm", b: 100000000, idf: false },
+      ],
+    });
+    expect(parsed.find((r) => r.id === "1")?.game_mode).toBe(2);
+    expect(parsed.find((r) => r.id === "2")?.game_mode).toBe(1);
+    expect(parsed.find((r) => r.id === "3")?.game_mode).toBeNull();
+  });
 });
