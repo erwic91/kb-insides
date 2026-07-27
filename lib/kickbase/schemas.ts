@@ -76,3 +76,52 @@ export const TransfersSchema = z
   })
   .passthrough();
 export type Transfers = z.infer<typeof TransfersSchema>;
+
+/** Eine Liga aus `/v4/leagues/selection` (`it[]`). */
+export const LeagueSelectionItemSchema = z
+  .object({
+    i: z.string(), // Liga-ID
+    n: z.string(), // Name
+    b: z.number().optional(), // eigenes Budget in dieser Liga
+    idf: z.boolean().optional(), // is default league
+  })
+  .passthrough();
+
+/** Antwort von `/v4/leagues/selection` — alle Ligen des Nutzers. */
+export const LeaguesSelectionSchema = z
+  .object({
+    it: z.array(LeagueSelectionItemSchema),
+  })
+  .passthrough();
+export type LeaguesSelection = z.infer<typeof LeaguesSelectionSchema>;
+
+/** Ein Marktangebot (`it[]`) aus `/v4/leagues/{lid}/market`. */
+export const MarketItemSchema = z
+  .object({
+    i: z.string(), // Spieler-ID
+    n: z.string().optional(), // Nachname
+    fn: z.string().optional(), // Vorname
+    p: z.number().optional(), // Punkte
+    pos: z.number().optional(), // Position (1 TW .. 4 ANG)
+    tid: z.string().optional(), // Team-ID
+    mv: z.number().optional(), // Marktwert
+    prc: z.number().optional(), // Preis / Angebotspreis
+    mvt: z.number().optional(), // Marktwert-Trend (1 steigt, 2 fällt)
+    dt: z.string().optional(), // Ablauf des Listings (Listing-Identität)
+    u: z
+      .object({ i: z.string(), n: z.string().optional() })
+      .passthrough()
+      .optional(), // Anbieter (Manager); fehlt = Kickbase/Computer
+  })
+  .passthrough();
+export type MarketItem = z.infer<typeof MarketItemSchema>;
+
+/** Antwort von `/v4/leagues/{lid}/market`. */
+export const MarketSchema = z
+  .object({
+    day: z.number().optional(),
+    dt: z.string().optional(),
+    it: z.array(MarketItemSchema),
+  })
+  .passthrough();
+export type Market = z.infer<typeof MarketSchema>;

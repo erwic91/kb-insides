@@ -1,7 +1,10 @@
 import { login, refreshTokens, isExpiringSoon, type KbTokens } from "./auth";
 import { loadAuth, saveAuth } from "../db/kbAuth";
+import { getSetting, setSetting } from "../db/settings";
 import { requireEnv } from "../env";
 import type { KbFetchOptions } from "./http";
+
+const OWN_USER_ID_KEY = "own_user_id";
 
 /**
  * Liefert ein gültiges Access-Token und stellt sicher, dass es die
@@ -34,8 +37,32 @@ export async function ensureToken(opts: KbFetchOptions = {}): Promise<string> {
 }
 
 export async function freshLogin(opts: KbFetchOptions = {}): Promise<KbTokens> {
-  return login(
+  const tokens = await login(
     { email: requireEnv("KICKBASE_EMAIL"), password: requireEnv("KICKBASE_PASSWORD") },
     opts,
   );
+  if (tokens.ownUserId) {
+    try {
+      await setSetting(OWN_USER_ID_KEY, tokens.ownUserId);
+    } catch {
+      // Caching der eigenen ID ist best-effort.
+    }
+  }
+  return tokens;
+}
+
+/**
+ * Eigene User-ID (für is_me / Kalibrierung). Zuerst aus dem Cache (app_settings),
+ * sonst per frischem Login ermitteln und cachen. Null, wenn nicht ermittelbar.
+ */
+export async function ensureOwnUserId(opts: KbFetchOptions = {}): Promise<string | null> {
+  const cached = await getSetting(OWN_USER_ID_KEY);
+  if (cached) return cached;
+  try {
+    const tokens = await freshLogin(opts);
+    await saveAuth(tokens);
+    return tokens.ownUserId;
+  } catch {
+    return null;
+  }
 }

@@ -71,14 +71,18 @@ Tabellen ohne öffentliche Policies.
 - [x] **M4** — Transfer-Ingest (`lib/ingest/transfers.ts`) + Rechenlogik
   (`lib/compute/reconstruct.ts`: Rekonstruktion, Maximalgebot, Overpay,
   FIFO-Gewinn). An echten Daten getestet.
-- [ ] **Checkpoint C** — euro-genaue Kalibrierung (siehe unten): braucht
-  laufende Saison + vollständige Transfers + Erfolgsprämien.
+- [~] **Checkpoint C** — Selbstkalibrierung schreibt jetzt eine `calibration`-Zeile
+  (Rekonstruktion vs. `/me/budget`) und zeigt sie als Statuszeile im Dashboard.
+  Euro-genau (Δ = 0) erst mit Erfolgsprämien + vollständigen Transfers +
+  laufender Saison; `achievements` ist im Capture angebunden (Pfad-Annahme).
 - [x] **M5** — Frontend an Supabase: eigenes Dark-Theme-Designsystem
   (`app/globals.css`), globaler Liga-Switch (`components/`), Read-Layer
-  (`lib/db/queries.ts`) und die Seiten Dashboard, Liga/Analyse, Manager-Detail
-  (Kaderwert/Punkte, Kontorekonstruktion, Handelsbilanz, Transferhistorie).
-- [ ] **M4b** — Multi-Liga-Fundament (Grundlage steht: alles ligagebunden)
-- [ ] **M6** — Marktradar + Spieler-Detail + Prognose + Favoriten
+  (`lib/db/queries.ts`) und die Seiten Dashboard, Liga/Analyse, Manager-Detail.
+- [x] **M4b** — Multi-Liga: `/selection`-Ingest (`lib/ingest/leaguesSelection.ts`)
+  füllt **alle** Ligen des Nutzers → der Liga-Switch hat jetzt echte Optionen.
+- [x] **M6** — Markt-Ingest (`lib/ingest/market.ts` → players/market_log/player_mv),
+  Marktradar (Jetzt-am-Markt, Overpay-vs-MV, Favoriten via localStorage,
+  Kadenz-Regler) und Spieler-Detail (MV-Verlauf, ligaweite Besitzhistorie).
 - [ ] **M7** — Cron + Deploy + Doku
 
 > **Hinweis:** Die fünf Prototyp-HTML-Dateien (`dashboard.html`, `liga.html`,

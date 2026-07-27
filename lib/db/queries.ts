@@ -281,3 +281,178 @@ export async function getManagerDetail(
     history,
   };
 }
+
+// ---------- M6: Markt ----------
+
+export interface MarketListing {
+  playerId: string;
+  playerName: string;
+  position: string | null;
+  team: string | null;
+  marketValue: number | null;
+  price: number | null;
+  offeredBy: string | null;
+  offeredByName: string | null;
+  expiry: string | null;
+}
+
+export async function getMarket(league: LeagueLite): Promise<MarketListing[]> {
+  const supabase = safeClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("market_log")
+    .select(
+      "player_id, price, market_value, offered_by, offered_by_name, expiry_ts, on_market",
+    )
+    .eq("league_id", league.id)
+    .eq("on_market", true)
+    .order("market_value", { ascending: false });
+  if (error || !data) return [];
+
+  const ids = [...new Set(data.map((r) => r.player_id as string))];
+  const players = new Map<string, { name?: string; position?: string; team?: string }>();
+  if (ids.length > 0) {
+    const { data: pdata } = await supabase
+      .from("players")
+      .select("id, name, position, team")
+      .in("id", ids);
+    for (const p of pdata ?? []) {
+      players.set(p.id as string, {
+        name: p.name as string,
+        position: p.position as string,
+        team: p.team as string,
+      });
+    }
+  }
+
+  return data.map((r) => {
+    const p = players.get(r.player_id as string);
+    return {
+      playerId: r.player_id as string,
+      playerName: p?.name ?? `#${r.player_id}`,
+      position: p?.position ?? null,
+      team: p?.team ?? null,
+      marketValue: (r.market_value as number) ?? null,
+      price: (r.price as number) ?? null,
+      offeredBy: (r.offered_by as string) ?? null,
+      offeredByName: (r.offered_by_name as string) ?? null,
+      expiry: (r.expiry_ts as string) ?? null,
+    };
+  });
+}
+
+export interface PlayerDetail {
+  id: string;
+  name: string;
+  position: string | null;
+  team: string | null;
+  mvHistory: { day: number; marketValue: number | null }[];
+  latestMv: number | null;
+  transfers: {
+    managerId: string;
+    managerName: string;
+    direction: Direction;
+    price: number;
+    ts: string | null;
+  }[];
+}
+
+export async function getPlayerDetail(
+  league: LeagueLite,
+  playerId: string,
+): Promise<PlayerDetail | null> {
+  const supabase = safeClient();
+  if (!supabase) return null;
+
+  const { data: pdata } = await supabase
+    .from("players")
+    .select("id, name, position, team")
+    .eq("id", playerId)
+    .maybeSingle();
+
+  const { data: mv } = await supabase
+    .from("player_mv")
+    .select("day, market_value")
+    .eq("league_id", league.id)
+    .eq("player_id", playerId)
+    .order("day", { ascending: true });
+  const mvHistory = (mv ?? []).map((r) => ({
+    day: r.day as number,
+    marketValue: (r.market_value as number) ?? null,
+  }));
+
+  const { data: tr } = await supabase
+    .from("transfers")
+    .select("from_manager, to_manager, direction, price, ts")
+    .eq("league_id", league.id)
+    .eq("player_id", playerId)
+    .order("ts", { ascending: false });
+
+  // Managernamen auflösen.
+  const mgrIds = new Set<string>();
+  for (const t of tr ?? []) {
+    const owner = (t.direction as Direction) === "buy" ? t.to_manager : t.from_manager;
+    if (owner) mgrIds.add(owner as string);
+  }
+  const names = new Map<string, string>();
+  if (mgrIds.size > 0) {
+    const { data: mdata } = await supabase
+      .from("managers")
+      .select("id, name")
+      .eq("league_id", league.id)
+      .in("id", [...mgrIds]);
+    for (const m of mdata ?? []) names.set(m.id as string, (m.name as string) ?? (m.id as string));
+  }
+
+  const transfers = (tr ?? []).map((t) => {
+    const direction = (t.direction as Direction) ?? "buy";
+    const owner = (direction === "buy" ? t.to_manager : t.from_manager) as string | null;
+    return {
+      managerId: owner ?? "",
+      managerName: owner ? (names.get(owner) ?? owner) : "Markt",
+      direction,
+      price: (t.price as number) ?? 0,
+      ts: (t.ts as string) ?? null,
+    };
+  });
+
+  if (!pdata && mvHistory.length === 0 && transfers.length === 0) return null;
+
+  return {
+    id: playerId,
+    name: (pdata?.name as string) ?? `#${playerId}`,
+    position: (pdata?.position as string) ?? null,
+    team: (pdata?.team as string) ?? null,
+    mvHistory,
+    latestMv: mvHistory.length > 0 ? mvHistory[mvHistory.length - 1]!.marketValue : null,
+    transfers,
+  };
+}
+
+// ---------- §8: Kalibrierung ----------
+
+export interface CalibrationRow {
+  day: number;
+  myReconstructed: number | null;
+  myActual: number | null;
+  delta: number | null;
+}
+
+export async function getCalibration(league: LeagueLite): Promise<CalibrationRow | null> {
+  const supabase = safeClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("calibration")
+    .select("day, my_reconstructed, my_actual, delta")
+    .eq("league_id", league.id)
+    .order("day", { ascending: false })
+    .limit(1);
+  if (error || !data || data.length === 0) return null;
+  const r = data[0]!;
+  return {
+    day: r.day as number,
+    myReconstructed: (r.my_reconstructed as number) ?? null,
+    myActual: (r.my_actual as number) ?? null,
+    delta: (r.delta as number) ?? null,
+  };
+}

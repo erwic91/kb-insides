@@ -185,6 +185,9 @@ export async function captureFixtures(): Promise<CaptureResult> {
     log.push(`→ Manager ${mid}`);
     await capture("manager_transfers", `/v4/leagues/${primary}/managers/${mid}/transfer`, token);
     const squad = await capture("manager_squad", `/v4/leagues/${primary}/managers/${mid}/squad`, token);
+    // Checkpoint C: Erfolgsprämien (`er`). Pfad ist eine begründete Annahme —
+    // scheitert er, landet { error } im Bundle und wir kennen die Wahrheit.
+    await capture("achievements", `/v4/leagues/${primary}/managers/${mid}/achievements`, token);
 
     playerId = findId(squad, ["pi", "pid", "playerId", "i", "id"]);
     if (playerId) {

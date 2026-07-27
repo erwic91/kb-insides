@@ -4,10 +4,14 @@ import {
   OverviewSchema,
   MeBudgetSchema,
   TransfersSchema,
+  LeaguesSelectionSchema,
+  MarketSchema,
   type Ranking,
   type Overview,
   type MeBudget,
   type Transfers,
+  type LeaguesSelection,
+  type Market,
 } from "./schemas";
 
 /**
@@ -56,4 +60,18 @@ export async function fetchTransfers(
     opts,
   );
   return TransfersSchema.parse(raw);
+}
+
+/** `/v4/leagues/selection` — alle Ligen des Nutzers. */
+export async function fetchLeaguesSelection(
+  opts: EndpointOptions,
+): Promise<LeaguesSelection> {
+  const raw = await kbFetch<unknown>(`/v4/leagues/selection`, opts);
+  return LeaguesSelectionSchema.parse(raw);
+}
+
+/** `/v4/leagues/{lid}/market` — aktuelles Marktangebot. */
+export async function fetchMarket(leagueId: string, opts: EndpointOptions): Promise<Market> {
+  const raw = await kbFetch<unknown>(`/v4/leagues/${leagueId}/market`, opts);
+  return MarketSchema.parse(raw);
 }

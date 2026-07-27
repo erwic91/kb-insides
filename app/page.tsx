@@ -1,6 +1,11 @@
 import Link from "next/link";
-import { resolveLeague, getManagerTable, type ManagerTableRow } from "../lib/db/queries";
-import { eur, eurFull, num } from "../lib/format";
+import {
+  resolveLeague,
+  getManagerTable,
+  getCalibration,
+  type ManagerTableRow,
+} from "../lib/db/queries";
+import { eur, eurFull, eurSigned, num } from "../lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +47,7 @@ export default async function DashboardPage({
   }
 
   const { day, rows } = await getManagerTable(league);
+  const calibration = await getCalibration(league);
   const active = rows.filter((r) => r.active);
   const leaderTv = [...active].sort((a, b) => (b.teamValue ?? 0) - (a.teamValue ?? 0))[0];
   const leaderPts = active[0];
@@ -61,6 +67,26 @@ export default async function DashboardPage({
           {rows.length} Managern
         </p>
       </div>
+
+      {calibration && (
+        <div
+          className={`notice ${calibration.delta === 0 ? "" : "warn"}`}
+          style={{ marginBottom: 18, display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}
+        >
+          {calibration.delta === 0 ? (
+            <span className="badge accent">bestätigt</span>
+          ) : (
+            <span className="badge">geschätzt</span>
+          )}
+          <span>
+            Selbstkalibrierung: Rekonstruktion <strong>{eur(calibration.myReconstructed)}</strong>{" "}
+            vs. <code>/me/budget</code> <strong>{eur(calibration.myActual)}</strong> · Δ{" "}
+            <strong>{eurSigned(calibration.delta)}</strong>
+            {calibration.delta !== 0 &&
+              " — offene Posten: Erfolgsprämien + vollständige Transfers (Checkpoint C)."}
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-4">
         <div className="card card-pad tile">

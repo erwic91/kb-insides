@@ -6,6 +6,8 @@ export interface KbTokens {
   refreshToken: string | null;
   /** ISO-Zeitstempel des Ablaufs, falls von der API geliefert. */
   expiresAt: string | null;
+  /** Eigene User-ID (raw.u.id) — garantiert Liga-Mitglied; für is_me/Kalibrierung. */
+  ownUserId: string | null;
   /** Rohantwort — nützlich für Fixture-Capture & Feld-Discovery (M1/Checkpoint B). */
   raw: Record<string, unknown>;
 }
@@ -39,8 +41,20 @@ export function extractTokens(raw: Record<string, unknown>): KbTokens {
     accessToken,
     refreshToken: findString(raw, REFRESH_TOKEN_KEYS),
     expiresAt: findString(raw, EXPIRY_KEYS),
+    ownUserId: extractOwnUserId(raw),
     raw,
   };
+}
+
+/** Eigene User-ID aus der Login-Antwort (`u.id`). */
+export function extractOwnUserId(raw: Record<string, unknown>): string | null {
+  const u = raw.u;
+  if (u && typeof u === "object") {
+    const id = (u as Record<string, unknown>).id;
+    if (typeof id === "string" && id) return id;
+    if (typeof id === "number") return String(id);
+  }
+  return null;
 }
 
 export interface LoginArgs {

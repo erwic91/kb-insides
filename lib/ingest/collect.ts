@@ -1,27 +1,42 @@
-import { ensureToken } from "../kickbase/session";
-import { fetchRanking, fetchTransfers } from "../kickbase/endpoints";
+import { ensureToken, ensureOwnUserId } from "../kickbase/session";
+import {
+  fetchRanking,
+  fetchTransfers,
+  fetchLeaguesSelection,
+  fetchMarket,
+  fetchMeBudget,
+} from "../kickbase/endpoints";
 import { politeDelay } from "../kickbase/http";
 import { parseLeagueIds } from "../env";
 import { parseRanking } from "./ranking";
-import { parseTransfers } from "./transfers";
+import { parseTransfers, type TransferRow } from "./transfers";
+import { parseLeaguesSelection } from "./leaguesSelection";
+import { parseMarket } from "./market";
+import { reconstructCash } from "../compute/reconstruct";
+import { START_BUDGET } from "../compute/constants";
 import {
   upsertLeague,
+  upsertLeagues,
   upsertManagers,
   upsertManagerSnapshots,
   upsertTransfers,
+  upsertPlayers,
+  upsertMarketLog,
+  upsertPlayerMv,
+  upsertCalibration,
+  markIsMe,
 } from "../db/ingest";
 
 /**
  * Collector: iteriert über alle konfigurierten Ligen (KICKBASE_LEAGUE_IDS).
+ * Einmal pro Lauf: /selection → alle Ligen des Nutzers in `leagues` (Basis für
+ * den globalen Liga-Switch, unabhängig davon welche gesammelt werden).
  * Pro Liga:
- *   M2 — aktuelles Ranking → leagues / managers / manager_snapshots
+ *   M2 — Ranking → leagues / managers / manager_snapshots (+ is_me)
  *   M4 — Transfers je Manager → transfers
- * Idempotent (Upserts auf die PKs). Defensiv: ein Fehler bei Liga/Manager A
- * bricht den Rest nicht ab.
- *
- * ⚠ Die Transfer-API ist auf ~25 Einträge gedeckelt. Bei einer laufenden Saison
- * ab Spieltag 1 fällt das nicht ins Gewicht (Historie wächst mit); bei
- * Alt-Ligen mit langer Historie fehlen ältere Transfers (README / Checkpoint C).
+ *   M6 — Markt → players / market_log / player_mv
+ *   §8 — me/budget + eigene Rekonstruktion → calibration
+ * Idempotent (Upserts auf die PKs), defensiv (Fehler isoliert je Liga/Manager).
  */
 
 export interface LeagueIngestResult {
@@ -31,6 +46,8 @@ export interface LeagueIngestResult {
   managers?: number;
   snapshots?: number;
   transfers?: number;
+  market?: number;
+  calibrationDelta?: number | null;
   error?: string;
 }
 
@@ -41,6 +58,17 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
   }
 
   const token = await ensureToken();
+  const ownId = await ensureOwnUserId();
+
+  // Alle Ligen des Nutzers in `leagues` schreiben (Liga-Switch füllt sich).
+  try {
+    const selection = await fetchLeaguesSelection({ token });
+    await upsertLeagues(parseLeaguesSelection(selection));
+    await politeDelay();
+  } catch {
+    // /selection nicht kritisch — Ranking legt die Primärliga ohnehin an.
+  }
+
   const leagues: LeagueIngestResult[] = [];
 
   for (const leagueId of leagueIds) {
@@ -51,18 +79,62 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
       await upsertLeague(rows.league);
       await upsertManagers(rows.managers);
       await upsertManagerSnapshots(rows.snapshots);
+      const day = rows.snapshots[0]?.day ?? null;
+      if (ownId && rows.managers.some((m) => m.id === ownId)) {
+        await markIsMe(leagueId, ownId);
+      }
       await politeDelay();
 
       // M4 — Transfers je Manager.
       let transferCount = 0;
+      let ownTransfers: TransferRow[] = [];
       for (const manager of rows.managers) {
         try {
           const tr = await fetchTransfers(leagueId, manager.id, { token });
           const transferRows = parseTransfers(tr, leagueId, manager.id);
           await upsertTransfers(transferRows);
           transferCount += transferRows.length;
+          if (manager.id === ownId) ownTransfers = transferRows;
         } catch {
           // Manager-Transfer-Fehler ignorieren, nächster Manager.
+        }
+        await politeDelay();
+      }
+
+      // M6 — Markt.
+      let marketCount = 0;
+      try {
+        const market = await fetchMarket(leagueId, { token });
+        const parsed = parseMarket(market, leagueId, new Date().toISOString());
+        await upsertPlayers(parsed.players);
+        await upsertMarketLog(parsed.marketLog);
+        await upsertPlayerMv(parsed.playerMv);
+        marketCount = parsed.marketLog.length;
+      } catch {
+        // Markt-Fehler isolieren.
+      }
+      await politeDelay();
+
+      // §8 — Selbstkalibrierung (eigenes Konto exakt vs. Rekonstruktion).
+      let calibrationDelta: number | null = null;
+      if (day != null) {
+        try {
+          const budget = await fetchMeBudget(leagueId, { token });
+          const myActual = budget.b;
+          // prizes = 0 bis der achievements-Endpunkt angebunden ist (Checkpoint C).
+          const myReconstructed = reconstructCash(ownTransfers, {
+            startBudget: START_BUDGET,
+          });
+          calibrationDelta = myReconstructed - myActual;
+          await upsertCalibration({
+            league_id: leagueId,
+            day,
+            my_reconstructed: myReconstructed,
+            my_actual: myActual,
+            delta: calibrationDelta,
+          });
+        } catch {
+          // me/budget nur für eigene Ligen verfügbar.
         }
         await politeDelay();
       }
@@ -70,10 +142,12 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
       leagues.push({
         leagueId,
         name: rows.league.name,
-        day: rows.snapshots[0]?.day ?? null,
+        day,
         managers: rows.managers.length,
         snapshots: rows.snapshots.length,
         transfers: transferCount,
+        market: marketCount,
+        calibrationDelta,
       });
     } catch (e) {
       leagues.push({ leagueId, error: (e as Error).message });
