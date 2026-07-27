@@ -73,9 +73,12 @@ Tabellen ohne öffentliche Policies.
   FIFO-Gewinn). An echten Daten getestet.
 - [ ] **Checkpoint C** — euro-genaue Kalibrierung (siehe unten): braucht
   laufende Saison + vollständige Transfers + Erfolgsprämien.
-- [ ] **M4b** — Multi-Liga-Fundament
-- [ ] **M5** — Frontend an Supabase (Dashboard/Liga/Manager)
-- [ ] **M6** — Markt + Prognose + Favoriten
+- [x] **M5** — Frontend an Supabase: eigenes Dark-Theme-Designsystem
+  (`app/globals.css`), globaler Liga-Switch (`components/`), Read-Layer
+  (`lib/db/queries.ts`) und die Seiten Dashboard, Liga/Analyse, Manager-Detail
+  (Kaderwert/Punkte, Kontorekonstruktion, Handelsbilanz, Transferhistorie).
+- [ ] **M4b** — Multi-Liga-Fundament (Grundlage steht: alles ligagebunden)
+- [ ] **M6** — Marktradar + Spieler-Detail + Prognose + Favoriten
 - [ ] **M7** — Cron + Deploy + Doku
 
 > **Hinweis:** Die fünf Prototyp-HTML-Dateien (`dashboard.html`, `liga.html`,
