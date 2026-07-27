@@ -27,6 +27,7 @@ import {
   upsertPlayerMv,
   upsertCalibration,
   markIsMe,
+  getLeagueTrackingSince,
 } from "../db/ingest";
 
 /**
@@ -123,6 +124,9 @@ async function collectOneLeague(
 
     const snapById = new Map(rows.snapshots.map((s) => [s.manager_id, s]));
 
+    // Monitoring-Startpunkt: nur Transfers ab hier laden (bounded Paginierung).
+    const trackingSince = await getLeagueTrackingSince(leagueId);
+
     // M4 — Transfers je Manager (volle Historie via ?start-Paginierung) +
     // Kaderwert-Anreicherung: früh in der Saison führt das Ranking keinen
     // Kaderwert; dann aus dem Manager-Dashboard (`tv`/`tp`) nachziehen.
@@ -153,7 +157,10 @@ async function collectOneLeague(
       }
 
       try {
-        const tr = await fetchAllTransfers(leagueId, manager.id, { token });
+        const tr = await fetchAllTransfers(leagueId, manager.id, {
+          token,
+          since: trackingSince,
+        });
         const transferRows = parseTransfers(tr, leagueId, manager.id);
         await upsertTransfers(transferRows);
         transferCount += transferRows.length;

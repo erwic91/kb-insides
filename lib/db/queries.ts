@@ -17,6 +17,8 @@ export interface LeagueLite {
   isDefault: boolean;
   /** Kickbase-Spielmodus: 2 = Manager-Liga (Konto rekonstruierbar), 1 = Classic. */
   gameMode: number | null;
+  /** Monitoring-Startpunkt (ISO) — Daten davor werden nicht geladen. null = alles. */
+  trackingSince: string | null;
 }
 
 export interface ManagerTableRow {
@@ -64,7 +66,7 @@ export async function getLeagues(): Promise<LeagueLite[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("leagues")
-    .select("id, name, start_budget, is_default, game_mode")
+    .select("id, name, start_budget, is_default, game_mode, tracking_since")
     .order("name");
   if (error || !data) return [];
   return data.map((l) => ({
@@ -73,6 +75,7 @@ export async function getLeagues(): Promise<LeagueLite[]> {
     startBudget: (l.start_budget as number) ?? START_BUDGET,
     isDefault: Boolean(l.is_default),
     gameMode: (l.game_mode as number) ?? null,
+    trackingSince: (l.tracking_since as string) ?? null,
   }));
 }
 

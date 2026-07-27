@@ -13,6 +13,46 @@ import type { PlayerRow, MarketLogRow, PlayerMvRow } from "../ingest/market";
  * (M4) befüllt und dürfen hier nicht überschrieben werden.
  */
 
+/** Liest den Monitoring-Startpunkt einer Liga (null = keine Grenze). */
+export async function getLeagueTrackingSince(leagueId: string): Promise<string | null> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("leagues")
+    .select("tracking_since")
+    .eq("id", leagueId)
+    .maybeSingle();
+  return (data?.tracking_since as string) ?? null;
+}
+
+/** Setzt den Monitoring-Startpunkt einer Liga (ISO-String oder null zum Löschen). */
+export async function setLeagueTrackingSince(
+  leagueId: string,
+  since: string | null,
+): Promise<void> {
+  const supabase = getServiceClient();
+  const { error } = await supabase
+    .from("leagues")
+    .update({ tracking_since: since })
+    .eq("id", leagueId);
+  if (error) throw new Error(`tracking_since setzen fehlgeschlagen: ${error.message}`);
+}
+
+/** Löscht Transfers vor einem Zeitpunkt (saubere Basis beim Tracking-Start). */
+export async function deleteTransfersBefore(
+  leagueId: string,
+  before: string,
+): Promise<number> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("transfers")
+    .delete()
+    .eq("league_id", leagueId)
+    .lt("ts", before)
+    .select("id");
+  if (error) throw new Error(`Transfers löschen fehlgeschlagen: ${error.message}`);
+  return data?.length ?? 0;
+}
+
 export async function upsertLeague(league: LeagueRow): Promise<void> {
   const supabase = getServiceClient();
   const { error } = await supabase

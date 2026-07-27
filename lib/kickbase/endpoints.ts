@@ -75,9 +75,13 @@ export async function fetchTransfers(
 export async function fetchAllTransfers(
   leagueId: string,
   managerId: string,
-  opts: EndpointOptions & { maxPages?: number },
+  opts: EndpointOptions & { maxPages?: number; since?: string | null },
 ): Promise<Transfers> {
-  const { maxPages, ...fetchOpts } = opts;
+  const { maxPages, since, ...fetchOpts } = opts;
+  const sinceMs = since ? Date.parse(since) : null;
+  const olderThanCutoff = (dt?: string) =>
+    sinceMs != null && dt != null && Date.parse(dt) < sinceMs;
+
   const items = await paginateTransfers(
     async (start) => {
       const q = start > 0 ? `?start=${start}` : "";
@@ -87,9 +91,18 @@ export async function fetchAllTransfers(
       );
       return TransfersSchema.parse(raw).it;
     },
-    { maxPages, onPage: politeDelay },
+    {
+      maxPages,
+      onPage: politeDelay,
+      // Transfers sind absteigend (neu → alt). Ist der letzte Eintrag einer
+      // Seite älter als der Tracking-Start, gibt es davor nichts Relevantes mehr.
+      stopAfter:
+        sinceMs == null ? undefined : (page) => olderThanCutoff(page[page.length - 1]?.dt),
+    },
   );
-  return { u: managerId, it: items };
+
+  const filtered = sinceMs == null ? items : items.filter((t) => !olderThanCutoff(t.dt));
+  return { u: managerId, it: filtered };
 }
 
 /** `/v4/leagues/selection` — alle Ligen des Nutzers. */

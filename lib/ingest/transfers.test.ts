@@ -96,4 +96,15 @@ describe("paginateTransfers", () => {
     const all = await paginateTransfers(async () => []);
     expect(all).toEqual([]);
   });
+
+  it("stoppt am Cutoff (stopAfter) — keine unnötigen Seiten mehr", async () => {
+    const fetchPage = vi.fn(async (start: number) => page(start, SIZE)); // endlos
+    // Nach der 2. vollen Seite abbrechen (simuliert: älter als Tracking-Start).
+    let seen = 0;
+    const all = await paginateTransfers(fetchPage, {
+      stopAfter: () => ++seen >= 2,
+    });
+    expect(all).toHaveLength(2 * SIZE);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
 });

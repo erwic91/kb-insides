@@ -18,7 +18,13 @@ export const TRANSFER_PAGE_SIZE = 25;
  */
 export async function paginateTransfers(
   fetchPage: (start: number) => Promise<TransferItem[]>,
-  opts: { pageSize?: number; maxPages?: number; onPage?: () => Promise<void> } = {},
+  opts: {
+    pageSize?: number;
+    maxPages?: number;
+    onPage?: () => Promise<void>;
+    /** Nach dieser Seite abbrechen (z. B. wenn älter als der Tracking-Start). */
+    stopAfter?: (items: TransferItem[]) => boolean;
+  } = {},
 ): Promise<TransferItem[]> {
   const pageSize = opts.pageSize ?? TRANSFER_PAGE_SIZE;
   const maxPages = opts.maxPages ?? 40;
@@ -36,6 +42,7 @@ export async function paginateTransfers(
 
     all.push(...items);
     if (items.length < pageSize) break; // letzte (unvollständige) Seite
+    if (opts.stopAfter?.(items)) break; // Cutoff erreicht (Transfers sind absteigend)
     if (opts.onPage) await opts.onPage();
   }
 

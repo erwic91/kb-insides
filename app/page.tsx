@@ -8,6 +8,7 @@ import {
 import { eur, eurSigned, num, pct } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
 import ManagerTable from "../components/ManagerTable";
+import TrackingControl from "../components/TrackingControl";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,9 @@ export default async function DashboardPage({
 
   const { day, rows } = await getManagerTable(league);
   const calibration = await getCalibration(league);
-  const showMoney = league.gameMode === 2;
+  // Absolute Konto-Rekonstruktion braucht eine bekannte Budget-Basis: nur in
+  // Manager-Ligen (gpm:2) OHNE Tracking-Cutoff (sonst nur Teilhistorie).
+  const showMoney = league.gameMode === 2 && !league.trackingSince;
   const active = rows.filter((r) => r.active);
   const me = rows.find((r) => r.isMe);
 
@@ -82,6 +85,8 @@ export default async function DashboardPage({
         <RefreshButton leagueId={league.id} />
       </div>
 
+      <TrackingControl leagueId={league.id} current={league.trackingSince} />
+
       {showMoney && calibration && (
         <div className={`notice ${calibration.delta === 0 ? "" : "warn"}`}>
           {calibration.delta === 0 ? (
@@ -97,9 +102,17 @@ export default async function DashboardPage({
 
       {!showMoney && (
         <div className="note-banner">
-          <b>{league.name}</b> ist eine Classic-Liga (Draft-Startkader). Kontostand,
-          Maximalgebot &amp; Liquidität lassen sich hier nicht aus Transfers rekonstruieren
-          und werden daher ausgeblendet — angezeigt werden nur API-exakte Werte.
+          {league.gameMode !== 2 ? (
+            <>
+              <b>{league.name}</b> ist eine Classic-Liga (Draft-Startkader).
+            </>
+          ) : (
+            <>
+              <b>{league.name}</b> hat einen Tracking-Startpunkt (nur Teilhistorie).
+            </>
+          )}{" "}
+          Kontostand, Maximalgebot &amp; Liquidität brauchen eine bekannte Budget-Basis und
+          werden daher ausgeblendet — angezeigt werden nur API-exakte Werte.
         </div>
       )}
 
