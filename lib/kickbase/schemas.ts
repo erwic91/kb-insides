@@ -54,3 +54,25 @@ export const MeBudgetSchema = z
   })
   .passthrough();
 export type MeBudget = z.infer<typeof MeBudgetSchema>;
+
+/** Ein Transfer (`it[]`) aus `/v4/leagues/{lid}/managers/{mid}/transfer`. */
+export const TransferItemSchema = z
+  .object({
+    dt: z.string(), // Zeitpunkt (ISO)
+    pi: z.string(), // Spieler-ID
+    pn: z.string().optional(), // Spielername
+    tid: z.string().optional(), // Team-ID
+    trp: z.number(), // Transferpreis in ganzen Euro
+    tty: z.number(), // Typ: 1 = Kauf, 2 = Verkauf (verifiziert, SPEC §12)
+  })
+  .passthrough();
+export type TransferItem = z.infer<typeof TransferItemSchema>;
+
+/** Antwort von `/v4/leagues/{lid}/managers/{mid}/transfer`. */
+export const TransfersSchema = z
+  .object({
+    u: z.string().optional(), // Manager-/User-ID
+    it: z.array(TransferItemSchema), // Transfers (i. d. R. auf die letzten ~25 begrenzt)
+  })
+  .passthrough();
+export type Transfers = z.infer<typeof TransfersSchema>;

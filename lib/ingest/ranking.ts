@@ -37,9 +37,15 @@ export interface RankingRows {
  * Baut aus der (bereits zod-validierten oder rohen) Ranking-Antwort die Zeilen.
  * Akzeptiert auch rohe Objekte — validiert dann selbst.
  */
-export function parseRanking(input: Ranking | unknown, leagueId: string): RankingRows {
+export function parseRanking(
+  input: Ranking | unknown,
+  leagueId: string,
+  opts: { dayOverride?: number } = {},
+): RankingRows {
   const res = RankingSchema.parse(input);
-  const day = res.day;
+  // Beim Backfill (M3) wird der ANGEFORDERTE Spieltag verwendet, nicht das
+  // `day` der Antwort — so landet jeder historische Lauf unter dem richtigen Tag.
+  const day = opts.dayOverride ?? res.day;
 
   const managers: ManagerRow[] = res.us.map((u) => ({
     league_id: leagueId,

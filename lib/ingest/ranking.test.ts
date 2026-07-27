@@ -45,4 +45,9 @@ describe("parseRanking", () => {
     expect(m?.name).toBe("esmüllert");
     expect(m?.league_id).toBe(LEAGUE);
   });
+
+  it("verwendet beim Backfill (M3) den angeforderten Spieltag statt res.day", () => {
+    const backfilled = parseRanking(rankingFixture, LEAGUE, { dayOverride: 12 });
+    expect(backfilled.snapshots.every((s) => s.day === 12)).toBe(true);
+  });
 });

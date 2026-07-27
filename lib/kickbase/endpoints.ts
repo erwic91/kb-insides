@@ -3,9 +3,11 @@ import {
   RankingSchema,
   OverviewSchema,
   MeBudgetSchema,
+  TransfersSchema,
   type Ranking,
   type Overview,
   type MeBudget,
+  type Transfers,
 } from "./schemas";
 
 /**
@@ -41,4 +43,17 @@ export async function fetchOverview(leagueId: string, opts: EndpointOptions): Pr
 export async function fetchMeBudget(leagueId: string, opts: EndpointOptions): Promise<MeBudget> {
   const raw = await kbFetch<unknown>(`/v4/leagues/${leagueId}/me/budget`, opts);
   return MeBudgetSchema.parse(raw);
+}
+
+/** `/v4/leagues/{lid}/managers/{mid}/transfer` — Transfers eines Managers. */
+export async function fetchTransfers(
+  leagueId: string,
+  managerId: string,
+  opts: EndpointOptions,
+): Promise<Transfers> {
+  const raw = await kbFetch<unknown>(
+    `/v4/leagues/${leagueId}/managers/${managerId}/transfer`,
+    opts,
+  );
+  return TransfersSchema.parse(raw);
 }

@@ -61,13 +61,18 @@ Tabellen ohne öffentliche Policies.
 ## Projektstatus (Meilensteine)
 
 - [x] **M0** — Projektgerüst (Next.js, Supabase-Client, vitest, vercel.json, Migration)
-- [x] **M1 (Code)** — Kickbase-Auth-Client + `scripts/smoke.ts` + Fixture-Capture
-  (`lib/kickbase/captureFixtures.ts`, geteilt von Skript und Route)
-  — **offen (Checkpoint B):** In Vercel Env-Variablen setzen + deployen, dann
-  `GET /api/dev/capture-fixtures` einmal auslösen und die JSON-Antwort committen.
-- [ ] **M2** — Schema-Ingest (Ranking → manager_snapshots)
-- [ ] **M3** — Backfill aller Spieltage
-- [ ] **M4** — Transfers + Kontorekonstruktion + Kalibrierung
+- [x] **M1** — Kickbase-Auth-Client + Smoke + Fixture-Capture
+- [x] **Checkpoint B** — echte Fixtures unter `/fixtures` (ranking/overview/
+  me_budget/leagues_selection/manager_transfers), Token/E-Mail redigiert.
+- [x] **M2** — Ranking-Ingest → `leagues`/`managers`/`manager_snapshots`
+  (`lib/ingest/ranking.ts`, `/api/cron/collect` + `/api/dev/collect`).
+- [x] **M3** — Backfill aller Spieltage (`lib/ingest/backfill.ts`,
+  `/api/dev/backfill`); `parseRanking` mit `dayOverride`.
+- [x] **M4** — Transfer-Ingest (`lib/ingest/transfers.ts`) + Rechenlogik
+  (`lib/compute/reconstruct.ts`: Rekonstruktion, Maximalgebot, Overpay,
+  FIFO-Gewinn). An echten Daten getestet.
+- [ ] **Checkpoint C** — euro-genaue Kalibrierung (siehe unten): braucht
+  laufende Saison + vollständige Transfers + Erfolgsprämien.
 - [ ] **M4b** — Multi-Liga-Fundament
 - [ ] **M5** — Frontend an Supabase (Dashboard/Liga/Manager)
 - [ ] **M6** — Markt + Prognose + Favoriten
@@ -77,12 +82,25 @@ Tabellen ohne öffentliche Policies.
 > `marktradar.html`, `manager.html`, `player.html`) sind die visuelle Referenz für
 > M5/M6 und liegen aktuell **nicht** im Repo — sie werden für das Frontend benötigt.
 
-## Offene Kalibrierungspunkte (SPEC §12)
+## Offene Kalibrierungspunkte (SPEC §12 / Checkpoint C)
 
-Durch echte Daten zu klären, hier zu dokumentieren sobald bekannt:
+An echten Daten geklärt:
 
-- Liefert `achievements` **fremde** Erfolgsprämien? (sonst Schätzposten)
-- `tty`-Mapping: welcher Wert = Kauf / Verkauf?
-- Maximalgebot-Faktor: 33 % exakt oder ⅓ (33,33 %)?
+- ✅ **`tty`-Mapping:** `1` = Kauf, `2` = Verkauf. Verifiziert daran, dass bei
+  jedem gekauften **und** verkauften Spieler `tty=1` zeitlich vor `tty=2` liegt.
+
+Noch offen (blockieren die euro-genaue Kalibrierung, Checkpoint C):
+
+- **Transfer-Liste gedeckelt (~25 Einträge).** Bei langer Historie fehlen ältere
+  Transfers → Rekonstruktion unvollständig. Zu klären: Paginierung/Parameter, um
+  die volle Historie zu ziehen.
+- **Erfolgsprämien noch nicht ingested.** Im eigenen Testfall klafft eine Lücke
+  von ~33,0 Mio zwischen Rekonstruktion (167,2 Mio) und `me/budget` — das ist der
+  erwartete Prämien-Posten. `achievements`-Endpunkt (`er`) muss noch abgegriffen
+  werden; offen, ob er **fremde** Prämien liefert (sonst Schätzposten).
+- **Saison-Reset.** Aktuelle Daten stammen aus der abgelaufenen Saison 25/26;
+  `me/budget` zeigt bereits den zurückgesetzten Kontostand. Euro-genaue
+  Kalibrierung ist erst **während einer laufenden Saison** möglich.
+- Maximalgebot-Faktor: 33 % exakt oder ⅓ (33,33 %)? (Konstante `MAX_BID_FACTOR`.)
 - Maximalgebot: Kaderwert **vor** oder **nach** dem gedachten Kauf?
 - `tv` bei historischem `dayNumber`: damaliger oder aktueller Wert?

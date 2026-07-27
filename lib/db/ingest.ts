@@ -1,5 +1,6 @@
 import { getServiceClient } from "./client";
 import type { LeagueRow, ManagerRow, SnapshotRow } from "../ingest/ranking";
+import type { TransferRow } from "../ingest/transfers";
 
 /**
  * Idempotente Upserts auf die Primärschlüssel aus der Migration (SPEC §5).
@@ -34,4 +35,13 @@ export async function upsertManagerSnapshots(snapshots: SnapshotRow[]): Promise<
     .from("manager_snapshots")
     .upsert(snapshots, { onConflict: "league_id,manager_id,day" });
   if (error) throw new Error(`manager_snapshots upsert fehlgeschlagen: ${error.message}`);
+}
+
+export async function upsertTransfers(transfers: TransferRow[]): Promise<void> {
+  if (transfers.length === 0) return;
+  const supabase = getServiceClient();
+  const { error } = await supabase
+    .from("transfers")
+    .upsert(transfers, { onConflict: "league_id,id" });
+  if (error) throw new Error(`transfers upsert fehlgeschlagen: ${error.message}`);
 }
