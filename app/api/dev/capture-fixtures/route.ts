@@ -40,7 +40,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await captureFixtures();
+    const preferredLeague = new URL(request.url).searchParams.get("league") ?? undefined;
+    const result = await captureFixtures({ preferredLeague });
 
     // Ergebnis zusaetzlich in Supabase ablegen, damit es serverseitig (ohne
     // Copy&Paste) ausgelesen werden kann. Fehler hier sind nicht fatal — die

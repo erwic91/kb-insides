@@ -126,7 +126,9 @@ export interface CaptureResult {
  * Rohantworten als Bundle zurück. Schreibt selbst nichts auf die Platte —
  * das übernimmt der Aufrufer (Skript = Datei, Route = HTTP-Antwort).
  */
-export async function captureFixtures(): Promise<CaptureResult> {
+export async function captureFixtures(
+  opts: { preferredLeague?: string } = {},
+): Promise<CaptureResult> {
   const bundle: Record<string, unknown> = {};
   const log: string[] = [];
 
@@ -157,7 +159,12 @@ export async function captureFixtures(): Promise<CaptureResult> {
   // Liga-Listing (das funktionierende Selection-Endpoint).
   const selection = await capture("leagues_selection", "/v4/leagues/selection", token);
 
-  const leagueIds = discoverLeagueIds(tokens.raw, selection, parseLeagueIds());
+  let leagueIds = discoverLeagueIds(tokens.raw, selection, parseLeagueIds());
+  // Optional eine bestimmte Liga zur Primärliga machen (Diagnose einer aktiven
+  // Liga: dann werden deren ranking/market/dashboard-Shapes abgegriffen).
+  if (opts.preferredLeague) {
+    leagueIds = [opts.preferredLeague, ...leagueIds.filter((id) => id !== opts.preferredLeague)];
+  }
   const managerId = ownUserId(tokens.raw);
 
   if (leagueIds.length === 0) {
