@@ -13,12 +13,14 @@ export const RankingUserSchema = z
   .object({
     i: z.string(), // Manager-/User-ID (in v4 global, aber je Liga eigene Daten)
     n: z.string().optional(), // Anzeigename
-    tv: z.number().optional(), // Kaderwert (Team Value)
-    sp: z.number().optional(), // Saisonpunkte
-    spl: z.number().optional(), // Saison-Platzierung
-    mdp: z.number().optional(), // Spieltagspunkte
-    mdpl: z.number().optional(), // Spieltags-Platzierung
-    lp: z.array(z.number()).optional(), // Punkte je Spieltag (Serie)
+    // Zahlenfelder sind in der frühen Saison teils `null` (nicht nur abwesend) —
+    // `nullish` akzeptiert number | null | undefined; der Parser macht `?? null`.
+    tv: z.number().nullish(), // Kaderwert (Team Value)
+    sp: z.number().nullish(), // Saisonpunkte
+    spl: z.number().nullish(), // Saison-Platzierung
+    mdp: z.number().nullish(), // Spieltagspunkte
+    mdpl: z.number().nullish(), // Spieltags-Platzierung
+    lp: z.array(z.number().nullable()).nullish(), // Punkte je Spieltag (Serie), früh mit null
     adm: z.boolean().optional(),
     uim: z.string().optional(),
   })

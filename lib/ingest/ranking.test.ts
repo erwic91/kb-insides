@@ -50,4 +50,25 @@ describe("parseRanking", () => {
     const backfilled = parseRanking(rankingFixture, LEAGUE, { dayOverride: 12 });
     expect(backfilled.snapshots.every((s) => s.day === 12)).toBe(true);
   });
+
+  it("verträgt null-Werte in der frühen Saison (lp/tv/sp), wie bei aktiven Ligen", () => {
+    // FFL-artige Antwort: `lp` mit null-Einträgen, tv/sp explizit null.
+    const earlySeason = {
+      ti: "Future Football League",
+      day: 2,
+      sn: "26/27",
+      us: [
+        { i: "1370582", n: "Alpha", tv: 51000000, sp: 340, lp: [180, null, null] },
+        { i: "2172510", n: "Eric W", tv: null, sp: null, lp: [null, null] },
+      ],
+    };
+    const rows = parseRanking(earlySeason, "11320459");
+    expect(rows.managers).toHaveLength(2);
+    expect(rows.snapshots.find((s) => s.manager_id === "2172510")).toMatchObject({
+      team_value: null,
+      points: null,
+      day: 2,
+    });
+    expect(rows.snapshots.find((s) => s.manager_id === "1370582")?.team_value).toBe(51000000);
+  });
 });
