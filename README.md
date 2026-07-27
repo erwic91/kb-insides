@@ -25,9 +25,8 @@ pnpm dev         # Next.js dev server
 
 ## Umgebungsvariablen (hosted-first)
 
-Maßgeblicher Ort ist **Vercel** → Project → Settings → Environment Variables.
-Eine lokale `.env.local` (`.env.example` kopieren) ist nur nötig, wenn man Skripte
-lokal fahren will. **Niemals `.env*` committen.**
+Maßgeblicher Ort ist **Vercel** → Project → Settings → Environment Variables
+(`.env.example` listet alle Keys). **Niemals `.env*` committen.**
 
 | Variable | Zweck | Woher |
 |---|---|---|
