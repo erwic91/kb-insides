@@ -6,11 +6,13 @@ import {
   getMarket,
   type ManagerTableRow,
 } from "../lib/db/queries";
+import { computeBidAdvice } from "../lib/compute/bidadvisor";
 import { eur, eurSigned, num, pct } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
 import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
 import DashboardFavorites from "../components/DashboardFavorites";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +73,28 @@ export default async function DashboardPage({
     .filter((r) => r.lastActiveDays != null)
     .sort((a, b) => (b.lastActiveDays ?? 0) - (a.lastActiveDays ?? 0))
     .slice(0, 3);
+
+  // Bid-Advisor: Marktchancen (freie Bahn / gewinnbar) aus den Max-Geboten.
+  const advice = computeBidAdvice(
+    rows.map((r) => ({ id: r.id, name: r.name, isMe: r.isMe, maxBid: r.maxBid })),
+    marketListings.map((l) => ({
+      playerId: l.playerId,
+      floor: l.price ?? l.marketValue ?? null,
+      offeredBy: l.offeredBy,
+    })),
+  );
+  const opportunities = showMoney
+    ? marketListings
+        .map((l) => ({ l, a: advice.get(l.playerId)! }))
+        .filter((x) => x.a && (x.a.verdict === "free" || x.a.verdict === "winnable"))
+        .sort((x, y) => {
+          const rank = (v: (typeof x)["a"]) => (v.verdict === "free" ? 0 : 1);
+          if (rank(x.a) !== rank(y.a)) return rank(x.a) - rank(y.a);
+          return (x.a.mustBid ?? 0) - (y.a.mustBid ?? 0);
+        })
+        .slice(0, 6)
+    : [];
+  const href = (base: string) => `${base}?league=${encodeURIComponent(league.id)}`;
 
   return (
     <main className="wrap">
@@ -159,20 +183,40 @@ export default async function DashboardPage({
         <DashboardFavorites listings={marketListings} leagueId={league.id} />
         <div className="panel">
           <div className="panel-head">
-            <h3>Schläfer</h3>
-            <span className="count">längste Transfer-Pause</span>
+            <h3>Marktchancen · Bid-Advisor</h3>
+            {showMoney && <span className="count">{opportunities.length}</span>}
           </div>
           <div>
-            {schlaefer.length > 0 ? (
-              schlaefer.map((r) => (
-                <Trow
-                  key={r.id}
-                  name={r.name}
-                  detail={r.lastActiveDays === 0 ? "heute aktiv" : `vor ${r.lastActiveDays} T`}
-                />
-              ))
+            {!showMoney ? (
+              <div className="mrow muted">
+                Gebots-Tipps erscheinen, sobald Start-Budget/Reset gesetzt ist.
+              </div>
+            ) : opportunities.length === 0 ? (
+              <div className="mrow muted">Gerade keine klaren Chancen am Markt.</div>
             ) : (
-              <div className="mrow muted">Noch keine Transfer-Aktivität erfasst.</div>
+              opportunities.map(({ l, a }) => (
+                <div className="mrow" key={l.playerId}>
+                  <span>
+                    <span className="pos-chip">{l.position ?? "—"}</span>
+                    <Link href={href(`/player/${l.playerId}`)} className="nm linklike">
+                      {l.playerName}
+                    </Link>
+                    <span className="muted sm"> · MW {eur(l.marketValue)}</span>
+                  </span>
+                  {a.verdict === "free" ? (
+                    <span
+                      className="pill"
+                      style={{ background: "rgba(15,122,90,.12)", color: "var(--gain)" }}
+                    >
+                      freie Bahn
+                    </span>
+                  ) : (
+                    <span className="num sm" style={{ color: "var(--signal)" }}>
+                      ≥ {eur(a.mustBid)}
+                    </span>
+                  )}
+                </div>
+              ))
             )}
           </div>
         </div>
@@ -186,13 +230,26 @@ export default async function DashboardPage({
         <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
       </div>
 
-      {verkaufsdruck.length > 0 && (
+      {(verkaufsdruck.length > 0 || schlaefer.length > 0) && (
         <div className="tiles4">
-          <InsightTile title="Verkaufsdruck" sub="niedrigste Liquidität">
-            {verkaufsdruck.map((r) => (
-              <Trow key={r.id} name={r.name} detail={`${pct(r.liquidity)} liquide · ${eur(r.cash)}`} />
-            ))}
-          </InsightTile>
+          {verkaufsdruck.length > 0 && (
+            <InsightTile title="Verkaufsdruck" sub="niedrigste Liquidität">
+              {verkaufsdruck.map((r) => (
+                <Trow key={r.id} name={r.name} detail={`${pct(r.liquidity)} liquide · ${eur(r.cash)}`} />
+              ))}
+            </InsightTile>
+          )}
+          {schlaefer.length > 0 && (
+            <InsightTile title="Schläfer" sub="längste Transfer-Pause">
+              {schlaefer.map((r) => (
+                <Trow
+                  key={r.id}
+                  name={r.name}
+                  detail={r.lastActiveDays === 0 ? "heute aktiv" : `vor ${r.lastActiveDays} T`}
+                />
+              ))}
+            </InsightTile>
+          )}
         </div>
       )}
 

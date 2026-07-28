@@ -59,6 +59,24 @@ export default async function PlayerPage({
   const maxMv = Math.max(1, ...p.mvHistory.map((h) => h.marketValue ?? 0));
   const hasCurve = curve != null && curve.points.length >= 2;
 
+  // 14-Tage-Trend aus der Marktwert-Kurve (letzter Punkt vs. Punkt ~14 Tage her).
+  let trend14: number | null = null;
+  if (hasCurve) {
+    const pts = curve!.points;
+    const last = pts[pts.length - 1]!;
+    const target = Date.parse(last.date) - 14 * 86_400_000;
+    let base = pts[0]!;
+    for (const pt of pts) {
+      if (Date.parse(pt.date) <= target) base = pt;
+      else break;
+    }
+    if (base.mv > 0) trend14 = (last.mv - base.mv) / base.mv;
+  }
+  const trendTxt =
+    trend14 == null
+      ? "—"
+      : `${trend14 >= 0 ? "+" : "−"}${(Math.abs(trend14) * 100).toFixed(1)} %`;
+
   return (
     <main className="wrap">
       <div className="crumb">
@@ -82,9 +100,11 @@ export default async function PlayerPage({
           <div className="hint">{eurFull(p.latestMv)}</div>
         </div>
         <div className="card card-pad tile">
-          <div className="label">MV-Datenpunkte</div>
-          <div className="value sm">{p.mvHistory.length}</div>
-          <div className="hint">wächst mit jedem Collector-Lauf</div>
+          <div className="label">14-Tage-Trend</div>
+          <div className={`value sm ${trend14 == null ? "" : trend14 >= 0 ? "up" : "down"}`}>
+            {trendTxt}
+          </div>
+          <div className="hint">Marktwert-Entwicklung</div>
         </div>
         <div className="card card-pad tile">
           <div className="label">Ligaweite Transfers</div>
