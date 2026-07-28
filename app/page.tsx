@@ -4,6 +4,7 @@ import {
   getManagerTable,
   getCalibration,
   getMarket,
+  getSquadLandscape,
   type ManagerTableRow,
 } from "../lib/db/queries";
 import { computeBidAdvice } from "../lib/compute/bidadvisor";
@@ -12,6 +13,12 @@ import RefreshButton from "../components/RefreshButton";
 import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
 import DashboardFavorites from "../components/DashboardFavorites";
+import {
+  MeinStanding,
+  BedrohungsRadar,
+  SpielerLandschaft,
+  Formkurve,
+} from "../components/Insights";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -39,8 +46,11 @@ export default async function DashboardPage({
   }
 
   const { day, rows } = await getManagerTable(league);
-  const calibration = await getCalibration(league);
-  const marketListings = await getMarket(league);
+  const [calibration, marketListings, landscape] = await Promise.all([
+    getCalibration(league),
+    getMarket(league),
+    getSquadLandscape(league),
+  ]);
   // Konto/Maximalgebot sind rekonstruierbar, sobald eine Budget-Basis (Start-
   // Budget) konfiguriert ist. Gerechnet wird ab dem Startzeitpunkt (siehe
   // getManagerTable). Gilt für beide Modi (Draft-Kader ist „gratis").
@@ -180,6 +190,11 @@ export default async function DashboardPage({
       </div>
 
       <div className="g-2">
+        <MeinStanding rows={rows} showMoney={showMoney} leagueId={league.id} />
+        <BedrohungsRadar rows={rows} showMoney={showMoney} leagueId={league.id} />
+      </div>
+
+      <div className="g-2">
         <DashboardFavorites listings={marketListings} leagueId={league.id} />
         <div className="panel">
           <div className="panel-head">
@@ -228,6 +243,11 @@ export default async function DashboardPage({
           <span className="note">Spaltenkopf klicken zum Sortieren</span>
         </div>
         <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
+      </div>
+
+      <div className="g-2">
+        {landscape && <SpielerLandschaft data={landscape} leagueId={league.id} />}
+        <Formkurve rows={rows} leagueId={league.id} />
       </div>
 
       {(verkaufsdruck.length > 0 || schlaefer.length > 0) && (

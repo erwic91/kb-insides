@@ -50,6 +50,8 @@ export interface ManagerTableRow {
   lastActiveDays: number | null;
   /** Anzahl erfasster Transfers dieses Managers. */
   transferCount: number;
+  /** Punkte je Spieltag (Formkurve) — null/[] wenn noch nicht erfasst. */
+  pointsSeries: (number | null)[] | null;
   active: boolean;
 }
 
@@ -162,7 +164,7 @@ export async function getManagerTable(
 
   const { data, error } = await supabase
     .from("manager_snapshots")
-    .select("manager_id, team_value, points, streak, squad_size, cash_actual")
+    .select("manager_id, team_value, points, streak, squad_size, cash_actual, points_series")
     .eq("league_id", league.id)
     .eq("day", day);
   if (error || !data) return { day, rows: [] };
@@ -233,6 +235,7 @@ export async function getManagerTable(
       liquidity,
       lastActiveDays,
       transferCount: myTransfers?.length ?? 0,
+      pointsSeries: (s.points_series as (number | null)[]) ?? null,
       active: teamValue != null || (s.points as number) != null,
     };
   });
@@ -461,6 +464,103 @@ export async function getTopPlayers(league: LeagueLite, limit = 50): Promise<Top
       ownerName: mmap.get(r.manager_id as string) ?? (r.manager_id as string),
     };
   });
+}
+
+export interface SquadLandscape {
+  /** Wie viele der Top-N-Spieler (nach Punkten) hält jeder Manager. */
+  starHolders: {
+    managerId: string;
+    managerName: string;
+    isMe: boolean;
+    count: number;
+    points: number;
+    marketValue: number;
+  }[];
+  /** Meine wertvollsten/punktbesten Spieler (nur eigener Kader). */
+  myAssets: {
+    playerId: string;
+    name: string;
+    position: string | null;
+    points: number | null;
+    marketValue: number | null;
+  }[];
+  /** Wie viele Top-N-Spieler ich selbst halte (Schnellblick). */
+  myStars: number;
+  topN: number;
+  /** true, wenn ein eigener Manager (is_me) in dieser Liga bekannt ist. */
+  hasMe: boolean;
+}
+
+/**
+ * Spieler-Landschaft: Wo sitzen die Stars der Liga? In Kickbase gehört jeder
+ * Spieler genau einem Manager — daher zählen wir, wie viele der Top-N-Spieler
+ * (nach Saisonpunkten) jeder Manager hält, plus die eigenen Top-Assets.
+ */
+export async function getSquadLandscape(
+  league: LeagueLite,
+  topN = 20,
+): Promise<SquadLandscape | null> {
+  const supabase = safeClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("squad_players")
+    .select("player_id, manager_id, points, avg_points, market_value, position")
+    .eq("league_id", league.id);
+  if (error || !data || data.length === 0) return null;
+
+  const mids = [...new Set(data.map((r) => r.manager_id as string))];
+  const pids = [...new Set(data.map((r) => r.player_id as string))];
+  const [mRes, pRes] = await Promise.all([
+    supabase.from("managers").select("id, name, is_me").eq("league_id", league.id).in("id", mids),
+    supabase.from("players").select("id, name, position").in("id", pids),
+  ]);
+  const mmap = new Map<string, { name: string; isMe: boolean }>();
+  for (const m of mRes.data ?? [])
+    mmap.set(m.id as string, { name: (m.name as string) ?? (m.id as string), isMe: Boolean(m.is_me) });
+  const pmap = new Map<string, { name?: string; position?: string }>();
+  for (const p of pRes.data ?? [])
+    pmap.set(p.id as string, { name: p.name as string, position: p.position as string });
+  const meId = [...mmap.entries()].find(([, v]) => v.isMe)?.[0] ?? null;
+
+  // Top-N-Spieler nach Punkten → Verteilung auf Manager.
+  const byPoints = [...data].sort((a, b) => ((b.points as number) ?? -1) - ((a.points as number) ?? -1));
+  const top = byPoints.slice(0, topN);
+  const holders = new Map<string, { count: number; points: number; marketValue: number }>();
+  for (const r of top) {
+    const mid = r.manager_id as string;
+    const h = holders.get(mid) ?? { count: 0, points: 0, marketValue: 0 };
+    h.count += 1;
+    h.points += (r.points as number) ?? 0;
+    h.marketValue += (r.market_value as number) ?? 0;
+    holders.set(mid, h);
+  }
+  const starHolders = [...holders.entries()]
+    .map(([mid, h]) => ({
+      managerId: mid,
+      managerName: mmap.get(mid)?.name ?? mid,
+      isMe: Boolean(mmap.get(mid)?.isMe),
+      count: h.count,
+      points: h.points,
+      marketValue: h.marketValue,
+    }))
+    .sort((a, b) => b.count - a.count || b.points - a.points);
+
+  const myAssets = meId
+    ? data
+        .filter((r) => (r.manager_id as string) === meId)
+        .map((r) => ({
+          playerId: r.player_id as string,
+          name: pmap.get(r.player_id as string)?.name ?? `#${r.player_id}`,
+          position: pmap.get(r.player_id as string)?.position ?? (r.position as string) ?? null,
+          points: (r.points as number) ?? null,
+          marketValue: (r.market_value as number) ?? null,
+        }))
+        .sort((a, b) => (b.points ?? -1) - (a.points ?? -1))
+        .slice(0, 6)
+    : [];
+  const myStars = meId ? (holders.get(meId)?.count ?? 0) : 0;
+
+  return { starHolders, myAssets, myStars, topN, hasMe: meId != null };
 }
 
 /**

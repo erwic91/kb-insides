@@ -28,6 +28,8 @@ export interface SnapshotRow {
   squad_size: number | null;
   /** Exakter Kontostand aus /me/budget — nur für den eigenen Manager. */
   cash_actual: number | null;
+  /** Punkte je Spieltag (Serie) aus ranking `us[].lp` — Formkurve. */
+  points_series: (number | null)[] | null;
 }
 
 export interface RankingRows {
@@ -64,6 +66,7 @@ export function parseRanking(
     points: u.sp ?? null,
     squad_size: null, // wird im Collector aus dem squad-Endpunkt angereichert
     cash_actual: null, // nur eigener Manager, aus /me/budget (Collector)
+    points_series: u.lp ?? null, // Formkurve: Punkte je Spieltag
   }));
 
   return {
