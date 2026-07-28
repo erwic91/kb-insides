@@ -15,6 +15,8 @@ Kickbase verbinden und darüber ihre Ligen + Daten gezogen bekommen.
 | Kickbase-Passwort | wird **nie dauerhaft gespeichert** — nur einmal gegen Tokens getauscht |
 | Vorgehen | erst dieses Design, dann Umsetzung in Phasen |
 | Accounts pro Person | **1:1** — ein Kickbase-Account je App-Nutzer |
+| Ligen pro Nutzer | **genau eine aktive Liga** gleichzeitig |
+| Liga wechseln | erst **7 Tage** nach Aktivierung der aktuellen Liga möglich |
 | Liga-Einstellungen ändern | **jedes verbundene Mitglied** darf ändern |
 | Scope | **privat, nur auf Einladung** (kein öffentliches Marketing) |
 | Datenlöschung (Retention) | Liga-Daten **30 Tage** nach Trennen der letzten Connection löschen |
@@ -77,25 +79,37 @@ create table profiles (
 
 -- Kickbase-Verbindung je App-Nutzer. Tokens VERSCHLÜSSELT (siehe §5).
 create table kb_connections (
-  user_id       uuid primary key references auth.users(id) on delete cascade,
-  kb_user_id    text not null,               -- Kickbase-User-ID (= manager_id je Liga)
-  access_token  bytea not null,              -- AES-GCM Chiffrat
-  refresh_token bytea,                        -- AES-GCM Chiffrat
-  token_iv      bytea not null,               -- Nonce/IV
-  token_tag     bytea not null,               -- GCM Auth-Tag
-  expires_at    timestamptz,
-  status        text not null default 'active', -- active | needs_reconnect
-  connected_at  timestamptz not null default now(),
-  updated_at    timestamptz not null default now()
+  user_id          uuid primary key references auth.users(id) on delete cascade,
+  kb_user_id       text not null,            -- Kickbase-User-ID (= manager_id je Liga)
+  access_token     bytea not null,           -- AES-GCM Chiffrat
+  refresh_token    bytea,                     -- AES-GCM Chiffrat
+  token_iv         bytea not null,            -- Nonce/IV
+  token_tag        bytea not null,            -- GCM Auth-Tag
+  expires_at       timestamptz,
+  status           text not null default 'active', -- active | needs_reconnect
+  active_league_id text,                      -- die EINE aktive Liga dieses Nutzers
+  league_activated_at timestamptz,            -- wann sie aktiviert wurde (7-Tage-Sperre)
+  connected_at     timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
 );
 
 -- Welche App-Nutzer dürfen welche Liga sehen (RLS-Grundlage).
--- Beim Verbinden aus /selection befüllt; beim Trennen bereinigt.
+-- HÖCHSTENS EINE Zeile je Nutzer (= active_league_id). Beim Aktivieren gesetzt,
+-- beim Wechsel/Trennen ersetzt bzw. entfernt.
 create table league_access (
   user_id     uuid not null references auth.users(id) on delete cascade,
   league_id   text not null,
   kb_manager_id text not null,               -- = kb_user_id; „welcher Manager bin ich hier"
   primary key (user_id, league_id)
+);
+
+-- Minimaler Sperr-Marker, der ein Trennen+Neuverbinden zum Umgehen der
+-- 7-Tage-Sperre verhindert. Überlebt das Trennen der Connection (enthält KEINE
+-- Tokens/personenbezogenen Daten außer der eigenen Liga-Wahl + Zeitstempel).
+create table league_switch_lock (
+  user_id      uuid primary key references auth.users(id) on delete cascade,
+  last_league_id text not null,
+  activated_at timestamptz not null
 );
 
 -- Nutzer-privater exakter Kontostand (ersetzt manager_snapshots.cash_actual
@@ -207,13 +221,40 @@ RLS umgeht — daher keine INSERT/UPDATE-Policies für normale Nutzer.
    **unsere** Server-Action, nicht an Kickbase direkt aus dem Browser).
 2. Server: `login(email, pass)` → Tokens + `kb_user_id`.
 3. Tokens verschlüsseln → `kb_connections` (Passwort verwerfen).
-4. `/selection` → für jede Liga `league_access(user_id, league_id, kb_manager_id)`
-   upserten.
-5. Initial-Collect für neu hinzugekommene Ligen anstoßen.
+4. `/selection` liefert alle Ligen des Nutzers → dem Nutzer zur **Auswahl EINER
+   Liga** anzeigen (siehe §7.5). Nur die gewählte Liga wird aktiviert.
+5. Für die gewählte Liga: `league_access`-Zeile setzen,
+   `active_league_id`/`league_activated_at` + `league_switch_lock` schreiben,
+   Initial-Collect anstoßen.
 6. **Einwilligung** (§9) muss vor Schritt 1 aktiv bestätigt werden.
+
+### 7.5 Eine aktive Liga + 7-Tage-Wechselsperre
+Jeder Nutzer hat **genau eine aktive Liga**. Das Kickbase-Token kann zwar alle
+Ligen sehen, aber gezogen/angezeigt wird nur die aktive — eine reine App-Regel.
+
+**Aktivieren von Liga L für Nutzer U:**
+- U hat noch keine aktive Liga → erlaubt. `active_league_id=L`,
+  `league_activated_at=now`, `league_switch_lock` setzen.
+- `U.active_league_id == L` (dieselbe Liga erneut, z. B. nach Reconnect) →
+  erlaubt, Zeitstempel **bleibt** (kein Reset der Sperre).
+- `U.active_league_id != L` (**Wechsel**) → nur erlaubt, wenn
+  `now − league_switch_lock.activated_at ≥ 7 Tage`. Dann Liga wechseln,
+  `league_access` ersetzen, Zeitstempel neu setzen.
+
+**Anti-Umgehung:** Die Sperre hängt am `league_switch_lock` (überlebt ein
+Trennen der Connection), damit „trennen → neu verbinden" die 7 Tage nicht
+zurücksetzt. Der Marker enthält nur die eigene Liga-Wahl + Zeitstempel, keine
+Tokens.
+
+**UI:** Vor Ablauf der 7 Tage ist „Liga wechseln" deaktiviert mit Hinweis „Wechsel
+ab TT.MM.JJJJ möglich". Der reine Kickbase-Reconnect (gleiche Liga) bleibt jederzeit
+möglich.
 
 ### 7.3 Trennen / Löschen (DSGVO)
 - „Kickbase trennen": `kb_connections`-Zeile + `league_access` des Nutzers löschen.
+  `league_switch_lock` (nur eigene Liga-Wahl + Zeitstempel, keine Tokens) bleibt
+  bis zum Ablauf der 7 Tage erhalten, damit die Wechselsperre nicht umgangen wird;
+  „Konto löschen" entfernt auch ihn (Cascade).
 - Ligen ohne verbleibendes verbundenes Mitglied: nicht mehr sammeln; Daten
   wahlweise behalten oder purgen (Retention-Entscheidung, §9).
 - „Konto löschen": `auth.users`-Löschung kaskadiert über `on delete cascade`.
@@ -226,13 +267,16 @@ RLS umgeht — daher keine INSERT/UPDATE-Policies für normale Nutzer.
 
 Heute: eine env-Liga-Liste, ein Token. Neu:
 
-1. Alle `kb_connections` mit `status='active'` laden.
+1. Alle `kb_connections` mit `status='active'` **und gesetzter
+   `active_league_id`** laden.
 2. Token je Connection sicherstellen (entschlüsseln, ggf. refreshen, bei
    Fehler `needs_reconnect`).
-3. **Ligen deduplizieren:** `league → erste gesunde Connection`. Jede Liga wird
-   **genau einmal** liga-weit gesammelt (Ranking/Transfers/Markt/Kader) — egal wie
-   viele Mitglieder verbunden sind. Das begrenzt die API-Last.
-4. **Pro Connection zusätzlich `/me/budget`** → `user_budget` (nutzer-privat).
+3. **Ligen deduplizieren:** die Menge der zu sammelnden Ligen ist die Menge der
+   `active_league_id` über alle Connections. `league → erste gesunde Connection`.
+   Jede Liga wird **genau einmal** liga-weit gesammelt (Ranking/Transfers/Markt/
+   Kader) — egal wie viele Mitglieder sie aktiv haben. Das begrenzt die API-Last.
+4. **Pro Connection zusätzlich `/me/budget`** (für die eigene aktive Liga) →
+   `user_budget` (nutzer-privat).
 5. Backoff/Block-Handling wie bisher; höhere Nutzerzahl = strengeres Rate-Limit
    und ein zentraler Lauf statt pro Nutzer.
 
