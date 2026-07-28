@@ -2,13 +2,15 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Erneuert die Supabase-Auth-Session bei jedem Request (Cookie-Refresh).
- *
- * BEWUSST NICHT-BLOCKIEREND (Phase 1): unangemeldete Besucher werden NICHT
- * umgeleitet — das bestehende Single-User-Dashboard (Service-Client) bleibt
- * erreichbar, bis in Phase 2 der Lesepfad auf RLS umgestellt ist. Der
- * Route-Schutz wird dort ergänzt.
+ * Erneuert die Supabase-Auth-Session (Cookie-Refresh) UND schützt die App
+ * (Phase 2): unangemeldete Besucher werden auf /login umgeleitet. Ausgenommen
+ * sind öffentliche Pfade — /login, /auth/* (Magic-Link-Callback/Logout) und
+ * /api/* (die per CRON_SECRET geschützt sind, nicht per Nutzer-Session).
  */
+function isPublicPath(path: string): boolean {
+  return path === "/login" || path.startsWith("/auth") || path.startsWith("/api");
+}
+
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request });
 
@@ -34,6 +36,15 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   );
 
   // Wichtig: getUser() aufrufen, damit Supabase den Token ggf. erneuert.
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user && !isPublicPath(request.nextUrl.pathname)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
   return response;
 }

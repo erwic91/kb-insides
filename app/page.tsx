@@ -20,6 +20,7 @@ import {
   Formkurve,
 } from "../components/Insights";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -31,19 +32,8 @@ export default async function DashboardPage({
   const { league: requested } = await searchParams;
   const league = await resolveLeague(requested);
 
-  if (!league) {
-    return (
-      <main className="page">
-        <div className="empty">
-          <h3>Noch keine Liga-Daten</h3>
-          <p>
-            Sobald der Collector einmal gelaufen ist, erscheinen hier die Ligen.
-            Prüfe die Supabase-Variablen und löse einmal <code>/api/cron/collect</code> aus.
-          </p>
-        </div>
-      </main>
-    );
-  }
+  // Angemeldet (Middleware), aber keine aktive Liga → zum Verbinden schicken.
+  if (!league) redirect("/connect");
 
   const { day, rows } = await getManagerTable(league);
   const [calibration, marketListings, landscape] = await Promise.all([

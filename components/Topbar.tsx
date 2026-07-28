@@ -9,6 +9,7 @@ const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/liga", label: "Liga" },
   { href: "/markt", label: "Marktradar" },
+  { href: "/connect", label: "Verbindung" },
 ];
 
 export default function Topbar({
@@ -22,6 +23,20 @@ export default function Topbar({
   // Liga in Navigationslinks mitführen (Dashboard bleibt der Einstieg).
   const withLeague = (href: string) =>
     league && href !== "/" ? `${href}?league=${encodeURIComponent(league)}` : href;
+
+  // Ohne zugängliche Liga (nicht angemeldet / noch nicht verbunden) nur die Marke
+  // zeigen — Login-/Verbinden-Seiten brauchen keine Liga-Navigation.
+  if (leagues.length === 0) {
+    return (
+      <header className="topbar">
+        <div className="topbar-in">
+          <Link href="/" className="brand">
+            Liga<span>monitor</span>
+          </Link>
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className="topbar">

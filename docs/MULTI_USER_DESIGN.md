@@ -332,11 +332,25 @@ Heute: eine env-Liga-Liste, ein Token. Neu:
 - Hinweis: Middleware ist **nicht-blockierend**; das bestehende Dashboard bleibt
   erreichbar. Der Route-Schutz + RLS-Lesepfad kommen in Phase 2.
 
-**Phase 2 — Mandantentrennung**
-- RLS auf allen liga-geteilten Tabellen + `user_budget` + `kb_connections`.
-- Read-Layer (`lib/db/queries.ts`) vom Service-Client auf **JWT-Client**
-  umstellen; „is_me" aus `league_access` statt `managers.is_me`.
-- `cash_actual` aus `manager_snapshots` → `user_budget` migrieren.
+**Phase 2 — Mandantentrennung** (umgesetzt)
+- [x] Migration `0010_rls_league_access`: SELECT-Policies auf leagues, managers,
+  manager_snapshots, transfers, market_log, player_mv, squad_players, prizes über
+  `league_access`; players für Angemeldete lesbar.
+- [x] `calibration` bewusst OHNE geteilte Policy (enthält exakten Kontostand →
+  nutzer-privat; wird in Phase 3 pro Nutzer neu aufgebaut).
+- [x] Read-Layer `queries.ts` auf den RLS-JWT-Client (`getReadClient`); `is_me`
+  aus `league_access`, exakter Kontostand aus `user_budget` (nicht mehr
+  `managers.is_me` / `manager_snapshots.cash_actual`).
+- [x] Middleware jetzt **blockierend**: unangemeldet → /login (außer
+  /login, /auth/*, /api/*). Dashboard ohne aktive Liga → /connect.
+- [x] Topbar zeigt ohne zugängliche Liga nur die Marke.
+- Hinweise / Phase-3-Abhängigkeiten:
+  - `user_budget` ist bis zum neuen Collector (Phase 3) leer → „Dein Konto" zeigt
+    vorerst die **Rekonstruktion** statt des exakten Werts.
+  - Der Refresh-Button / `/api/collect` bleibt bis Phase 3 single-user
+    (env + CRON_SECRET).
+  - Ende-zu-Ende erst testbar, wenn die Env-Variablen (Phase 1) gesetzt sind und
+    ein Nutzer eingeloggt + eine Liga aktiviert hat.
 
 **Phase 3 — Collector**
 - `runCollect` über `kb_connections` + Liga-Dedupe; `/me/budget` pro Connection

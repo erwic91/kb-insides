@@ -1,4 +1,4 @@
-import { getServiceClient } from "./client";
+import { createSupabaseServerClient } from "../supabase/server";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
 import { computeBidAdvice, type BidAdvice } from "../compute/bidadvisor";
 import { START_BUDGET } from "../compute/constants";
@@ -64,16 +64,53 @@ export interface TransferLite {
   mvAtTime: number | null;
 }
 
-function safeClient() {
+/**
+ * RLS-gebundener Lese-Client (JWT des angemeldeten Nutzers). Sieht via RLS nur
+ * die Ligen, auf die der Nutzer über league_access Zugriff hat. Null, wenn kein
+ * Request-Kontext / keine Session vorhanden ist (dann leere Ergebnisse).
+ */
+async function getReadClient() {
   try {
-    return getServiceClient();
+    return await createSupabaseServerClient();
   } catch {
     return null;
   }
 }
 
+/** Eigener Liga-Zugang des Nutzers (RLS liefert nur die eigene Zeile). */
+export interface MyAccess {
+  leagueId: string;
+  kbManagerId: string;
+}
+async function getMyAccess(): Promise<MyAccess | null> {
+  const supabase = await getReadClient();
+  if (!supabase) return null;
+  const { data } = await supabase
+    .from("league_access")
+    .select("league_id, kb_manager_id")
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return { leagueId: data.league_id as string, kbManagerId: data.kb_manager_id as string };
+}
+
+/** Eigener exakter Kontostand je Spieltag (aus user_budget; RLS = nur eigene). */
+async function getMyBudget(leagueId: string): Promise<Map<number, number>> {
+  const supabase = await getReadClient();
+  const out = new Map<number, number>();
+  if (!supabase) return out;
+  const { data } = await supabase
+    .from("user_budget")
+    .select("day, cash_actual")
+    .eq("league_id", leagueId);
+  for (const r of data ?? []) {
+    if (r.cash_actual != null) out.set(r.day as number, r.cash_actual as number);
+  }
+  return out;
+}
+
 export async function getLeagues(): Promise<LeagueLite[]> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("leagues")
@@ -105,7 +142,7 @@ export async function resolveLeague(requested?: string): Promise<LeagueLite | nu
 }
 
 async function getLatestDay(leagueId: string): Promise<number | null> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("manager_snapshots")
@@ -121,7 +158,7 @@ async function getLatestDay(leagueId: string): Promise<number | null> {
 async function getTransfersByManager(
   leagueId: string,
 ): Promise<Map<string, TransferLite[]>> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   const byManager = new Map<string, TransferLite[]>();
   if (!supabase) return byManager;
   const { data, error } = await supabase
@@ -157,14 +194,14 @@ export interface ManagerTable {
 export async function getManagerTable(
   league: LeagueLite,
 ): Promise<ManagerTable> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return { day: null, rows: [] };
   const day = await getLatestDay(league.id);
   if (day == null) return { day: null, rows: [] };
 
   const { data, error } = await supabase
     .from("manager_snapshots")
-    .select("manager_id, team_value, points, streak, squad_size, cash_actual, points_series")
+    .select("manager_id, team_value, points, streak, squad_size, points_series")
     .eq("league_id", league.id)
     .eq("day", day);
   if (error || !data) return { day, rows: [] };
@@ -181,6 +218,10 @@ export async function getManagerTable(
   }
 
   const transfers = await getTransfersByManager(league.id);
+  // „Ich" + exakter Kontostand kommen jetzt pro Nutzer aus league_access /
+  // user_budget (nicht mehr aus managers.is_me / snapshots.cash_actual).
+  const [myAccess, myBudget] = await Promise.all([getMyAccess(), getMyBudget(league.id)]);
+  const myCashActual = myBudget.get(day) ?? null;
   const now = Date.now();
   // Ab Startzeitpunkt rechnen: Kontostand/Aktivität nur aus Transfers seit dem
   // Tracking-Start (start_budget ist die Budget-Basis genau zu diesem Zeitpunkt).
@@ -189,7 +230,9 @@ export async function getManagerTable(
   const rows: ManagerTableRow[] = data.map((s) => {
     const mid = s.manager_id as string;
     const mgr = mgrMap.get(mid);
-    const isMe = Boolean(mgr?.is_me);
+    // is_me: der Manager, dessen ID = kb_manager_id des Nutzers (aus league_access).
+    // Fallback auf managers.is_me nur, wenn kein Liga-Zugang bekannt ist.
+    const isMe = myAccess ? mid === myAccess.kbManagerId : Boolean(mgr?.is_me);
     const teamValue = (s.team_value as number) ?? null;
     const allTransfers = transfers.get(mid);
     const myTransfers =
@@ -198,8 +241,8 @@ export async function getManagerTable(
         : allTransfers;
 
     // Kontostand: für den EIGENEN Manager der exakte Wert aus /me/budget
-    // (cash_actual), sonst die Rekonstruktion aus Transfers (nur Näherung).
-    const cashActual = isMe ? ((s.cash_actual as number) ?? null) : null;
+    // (user_budget, nutzer-privat), sonst Rekonstruktion aus Transfers (Näherung).
+    const cashActual = isMe ? myCashActual : null;
     // Rekonstruktion, sobald eine Budget-Basis existiert — auch OHNE Transfers:
     // dann exakt das Start-Budget (z. B. direkt nach einem Reset, wo alle bei
     // 200 Mio stehen, bevor der erste Kauf läuft). Dieselbe Formel, leere Summe.
@@ -275,7 +318,7 @@ export async function getManagerDetail(
   league: LeagueLite,
   managerId: string,
 ): Promise<ManagerDetail | null> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return null;
 
   const { data: mgrData } = await supabase
@@ -289,7 +332,7 @@ export async function getManagerDetail(
 
   const { data: snaps } = await supabase
     .from("manager_snapshots")
-    .select("day, team_value, points, streak, squad_size, cash_actual")
+    .select("day, team_value, points, streak, squad_size")
     .eq("league_id", league.id)
     .eq("manager_id", managerId)
     .order("day", { ascending: true });
@@ -300,11 +343,14 @@ export async function getManagerDetail(
     points: (s.points as number) ?? null,
     streak: (s.streak as number) ?? null,
     squadSize: (s.squad_size as number) ?? null,
-    cashActual: (s.cash_actual as number) ?? null,
   }));
   const latest = history.length > 0 ? history[history.length - 1] : null;
 
-  const isMe = Boolean(mgr.is_me);
+  // „Ich" pro Nutzer (league_access); exakter Kontostand aus user_budget.
+  const myAccess = await getMyAccess();
+  const isMe = myAccess ? managerId === myAccess.kbManagerId : Boolean(mgr.is_me);
+  const cashActual =
+    isMe && latest?.day != null ? ((await getMyBudget(league.id)).get(latest.day) ?? null) : null;
   const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
   const transfersByManager = await getTransfersByManager(league.id);
   const transfers = (transfersByManager.get(managerId) ?? [])
@@ -317,7 +363,7 @@ export async function getManagerDetail(
     league.startBudget > 0
       ? reconstructCash(transfers, { startBudget: league.startBudget })
       : null;
-  const cash = isMe && latest?.cashActual != null ? latest.cashActual : reconstructed;
+  const cash = cashActual != null ? cashActual : reconstructed;
   const teamValue = latest?.teamValue ?? null;
   const bid = cash != null && teamValue != null ? maxBid(cash, teamValue) : null;
 
@@ -340,7 +386,7 @@ export async function getManagerDetail(
   return {
     id: managerId,
     name: (mgr.name as string) ?? managerId,
-    isMe: Boolean(mgr.is_me),
+    isMe,
     day: latest?.day ?? null,
     teamValue,
     points: latest?.points ?? null,
@@ -373,7 +419,7 @@ export interface MarketListing {
 }
 
 export async function getMarket(league: LeagueLite): Promise<MarketListing[]> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("market_log")
@@ -432,7 +478,7 @@ export interface TopPlayer {
 
 /** Top-Spieler der Liga (aus dem Kaderbestand), sortiert nach Saisonpunkten. */
 export async function getTopPlayers(league: LeagueLite, limit = 50): Promise<TopPlayer[]> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return [];
   const { data, error } = await supabase
     .from("squad_players")
@@ -505,7 +551,7 @@ export async function getSquadLandscape(
   league: LeagueLite,
   topN = 20,
 ): Promise<SquadLandscape | null> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("squad_players")
@@ -603,7 +649,7 @@ export async function getPlayerHolder(
   league: LeagueLite,
   playerId: string,
 ): Promise<PlayerHolder | null> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return null;
   const { data } = await supabase
     .from("squad_players")
@@ -646,7 +692,7 @@ export async function getPlayerDetail(
   league: LeagueLite,
   playerId: string,
 ): Promise<PlayerDetail | null> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return null;
 
   const { data: pdata } = await supabase
@@ -763,7 +809,7 @@ export interface CalibrationRow {
 }
 
 export async function getCalibration(league: LeagueLite): Promise<CalibrationRow | null> {
-  const supabase = safeClient();
+  const supabase = await getReadClient();
   if (!supabase) return null;
   const { data, error } = await supabase
     .from("calibration")
