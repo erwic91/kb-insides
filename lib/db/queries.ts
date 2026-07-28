@@ -486,6 +486,41 @@ export async function getBidAdvisor(
   return { listings, advice };
 }
 
+export interface PlayerHolder {
+  managerId: string;
+  managerName: string;
+  points: number | null;
+  marketValue: number | null;
+}
+
+/** Aktueller Besitzer eines Spielers in dieser Liga (aus dem Kaderbestand). */
+export async function getPlayerHolder(
+  league: LeagueLite,
+  playerId: string,
+): Promise<PlayerHolder | null> {
+  const supabase = safeClient();
+  if (!supabase) return null;
+  const { data } = await supabase
+    .from("squad_players")
+    .select("manager_id, points, market_value")
+    .eq("league_id", league.id)
+    .eq("player_id", playerId)
+    .maybeSingle();
+  if (!data) return null;
+  const { data: m } = await supabase
+    .from("managers")
+    .select("name")
+    .eq("league_id", league.id)
+    .eq("id", data.manager_id as string)
+    .maybeSingle();
+  return {
+    managerId: data.manager_id as string,
+    managerName: (m?.name as string) ?? (data.manager_id as string),
+    points: (data.points as number) ?? null,
+    marketValue: (data.market_value as number) ?? null,
+  };
+}
+
 export interface PlayerDetail {
   id: string;
   name: string;

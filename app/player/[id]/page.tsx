@@ -3,6 +3,7 @@ import {
   resolveLeague,
   getPlayerDetail,
   getPlayerMarketValueCurve,
+  getPlayerHolder,
 } from "../../../lib/db/queries";
 import { eur, eurFull, date } from "../../../lib/format";
 import LineChart from "../../../components/LineChart";
@@ -37,9 +38,10 @@ export default async function PlayerPage({
     );
   }
 
-  const [p, curve] = await Promise.all([
+  const [p, curve, holder] = await Promise.all([
     getPlayerDetail(league, id),
     getPlayerMarketValueCurve(league, id),
+    getPlayerHolder(league, id),
   ]);
 
   if (!p) {
@@ -110,6 +112,23 @@ export default async function PlayerPage({
           <div className="label">Ligaweite Transfers</div>
           <div className="value sm">{p.transfers.length}</div>
           <div className="hint">Käufe &amp; Verkäufe in dieser Liga</div>
+        </div>
+        <div className="card card-pad tile">
+          <div className="label">Im Kader von</div>
+          <div className="value sm">
+            {holder ? (
+              <Link href={leagueHref(`/manager/${holder.managerId}`, league.id)} className="linklike">
+                {holder.managerName}
+              </Link>
+            ) : (
+              "—"
+            )}
+          </div>
+          <div className="hint">
+            {holder
+              ? `${holder.points ?? 0} Punkte im Kader`
+              : "aktuell in keinem erfassten Kader (Markt/frei)"}
+          </div>
         </div>
       </div>
 
