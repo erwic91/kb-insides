@@ -200,9 +200,13 @@ export async function getManagerTable(
     // Kontostand: für den EIGENEN Manager der exakte Wert aus /me/budget
     // (cash_actual), sonst die Rekonstruktion aus Transfers (nur Näherung).
     const cashActual = isMe ? ((s.cash_actual as number) ?? null) : null;
-    const reconstructed = myTransfers
-      ? reconstructCash(myTransfers, { startBudget: league.startBudget })
-      : null;
+    // Rekonstruktion, sobald eine Budget-Basis existiert — auch OHNE Transfers:
+    // dann exakt das Start-Budget (z. B. direkt nach einem Reset, wo alle bei
+    // 200 Mio stehen, bevor der erste Kauf läuft). Dieselbe Formel, leere Summe.
+    const reconstructed =
+      league.startBudget > 0
+        ? reconstructCash(myTransfers ?? [], { startBudget: league.startBudget })
+        : null;
     const cash = cashActual ?? reconstructed;
     const cashExact = cashActual != null;
     const bid = cash != null && teamValue != null ? maxBid(cash, teamValue) : null;
@@ -308,8 +312,9 @@ export async function getManagerDetail(
     .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
 
   // Eigener Manager: exakter Kontostand aus /me/budget, sonst Rekonstruktion.
+  // Auch ohne Transfers rekonstruieren (= Start-Budget), sofern eine Basis da ist.
   const reconstructed =
-    transfers.length > 0
+    league.startBudget > 0
       ? reconstructCash(transfers, { startBudget: league.startBudget })
       : null;
   const cash = isMe && latest?.cashActual != null ? latest.cashActual : reconstructed;
