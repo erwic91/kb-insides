@@ -144,7 +144,17 @@ export async function markIsMe(leagueId: string, managerId: string): Promise<voi
 export async function upsertLeagues(leagues: LeagueSelectionRow[]): Promise<void> {
   if (leagues.length === 0) return;
   const supabase = getServiceClient();
-  const { error } = await supabase.from("leagues").upsert(leagues, { onConflict: "id" });
+  // WICHTIG: nur Kickbase-„Fakten" synchronisieren (Name, Default, Spielmodus).
+  // start_budget / tracking_since / include_history / bonus_mode sind vom Nutzer
+  // konfiguriert und dürfen NICHT bei jedem Sammel-Lauf überschrieben werden.
+  // Spalten, die hier fehlen, lässt Supabase auf bestehenden Zeilen unangetastet.
+  const facts = leagues.map((l) => ({
+    id: l.id,
+    name: l.name,
+    is_default: l.is_default,
+    game_mode: l.game_mode,
+  }));
+  const { error } = await supabase.from("leagues").upsert(facts, { onConflict: "id" });
   if (error) throw new Error(`leagues upsert fehlgeschlagen: ${error.message}`);
 }
 

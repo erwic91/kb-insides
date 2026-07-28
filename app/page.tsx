@@ -145,10 +145,11 @@ export default async function DashboardPage({
         </div>
         {showMoney && (
           <div className="card card-pad tile">
-            <div className="label">Dein Konto (rekonstruiert)</div>
+            <div className="label">Dein Konto{me?.cashExact ? "" : " (rekonstruiert)"}</div>
             <div className="value sm">{eur(me?.cash ?? null)}</div>
             <div className="hint">
-              {me?.maxBid != null ? `Max. Gebot ${eur(me.maxBid)}` : "aus Transfers"}
+              {me?.cashExact ? "exakt aus /me/budget" : "rekonstruiert"}
+              {me?.maxBid != null ? ` · Max. Gebot ${eur(me.maxBid)}` : ""}
             </div>
           </div>
         )}

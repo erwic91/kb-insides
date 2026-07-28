@@ -213,6 +213,16 @@ async function collectOneLeague(
       try {
         const budget = await fetchMeBudget(leagueId, { token });
         const myActual = budget.b;
+
+        // Exakten eigenen Kontostand in den eigenen Snapshot schreiben — das ist
+        // die verlässliche Quelle (die Rekonstruktion ist nur eine Näherung, in
+        // gpm:1 sogar prinzipbedingt ungenau). Wird im Dashboard bevorzugt.
+        const ownSnap = ownId ? snapById.get(ownId) : undefined;
+        if (ownSnap) {
+          ownSnap.cash_actual = myActual;
+          await upsertManagerSnapshots([ownSnap]);
+        }
+
         // Rekonstruktion mit dem tatsächlichen Liga-Start-Budget (nicht der
         // globalen Konstante) und den ab Startpunkt gefilterten Transfers.
         // prizes = 0 bis Boni verdrahtet sind (Checkpoint C, braucht Prämien-

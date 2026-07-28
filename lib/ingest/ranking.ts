@@ -26,6 +26,8 @@ export interface SnapshotRow {
   team_value: number | null;
   points: number | null;
   squad_size: number | null;
+  /** Exakter Kontostand aus /me/budget — nur für den eigenen Manager. */
+  cash_actual: number | null;
 }
 
 export interface RankingRows {
@@ -61,6 +63,7 @@ export function parseRanking(
     team_value: u.tv ?? null,
     points: u.sp ?? null,
     squad_size: null, // wird im Collector aus dem squad-Endpunkt angereichert
+    cash_actual: null, // nur eigener Manager, aus /me/budget (Collector)
   }));
 
   return {

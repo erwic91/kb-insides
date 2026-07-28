@@ -35,8 +35,10 @@ export interface ManagerTableRow {
   points: number | null;
   streak: number | null;
   squadSize: number | null;
-  /** Rekonstruiert — nur wenn Transfers vorliegen, sonst null. */
+  /** Kontostand: exakt (eigener Manager, /me/budget) oder rekonstruiert. */
   cash: number | null;
+  /** true = cash ist der exakte /me/budget-Wert (nur eigener Manager). */
+  cashExact: boolean;
   /** Maximalgebot — nur wenn cash & Kaderwert bekannt. */
   maxBid: number | null;
   /** Gesamtwert = Kontostand + Kaderwert (nur wenn beide bekannt). */
@@ -159,7 +161,7 @@ export async function getManagerTable(
 
   const { data, error } = await supabase
     .from("manager_snapshots")
-    .select("manager_id, team_value, points, streak, squad_size")
+    .select("manager_id, team_value, points, streak, squad_size, cash_actual")
     .eq("league_id", league.id)
     .eq("day", day);
   if (error || !data) return { day, rows: [] };
@@ -184,15 +186,22 @@ export async function getManagerTable(
   const rows: ManagerTableRow[] = data.map((s) => {
     const mid = s.manager_id as string;
     const mgr = mgrMap.get(mid);
+    const isMe = Boolean(mgr?.is_me);
     const teamValue = (s.team_value as number) ?? null;
     const allTransfers = transfers.get(mid);
     const myTransfers =
       sinceMs != null && allTransfers
         ? allTransfers.filter((t) => t.ts != null && Date.parse(t.ts) >= sinceMs)
         : allTransfers;
-    const cash = myTransfers
+
+    // Kontostand: für den EIGENEN Manager der exakte Wert aus /me/budget
+    // (cash_actual), sonst die Rekonstruktion aus Transfers (nur Näherung).
+    const cashActual = isMe ? ((s.cash_actual as number) ?? null) : null;
+    const reconstructed = myTransfers
       ? reconstructCash(myTransfers, { startBudget: league.startBudget })
       : null;
+    const cash = cashActual ?? reconstructed;
+    const cashExact = cashActual != null;
     const bid = cash != null && teamValue != null ? maxBid(cash, teamValue) : null;
     const total = cash != null && teamValue != null ? cash + teamValue : null;
     const liquidity = total != null && total > 0 && cash != null ? cash / total : null;
@@ -211,12 +220,13 @@ export async function getManagerTable(
     return {
       id: mid,
       name: mgr?.name ?? mid,
-      isMe: Boolean(mgr?.is_me),
+      isMe,
       teamValue,
       points: (s.points as number) ?? null,
       streak: (s.streak as number) ?? null,
       squadSize: (s.squad_size as number) ?? null,
       cash,
+      cashExact,
       maxBid: bid,
       total,
       liquidity,
@@ -271,7 +281,7 @@ export async function getManagerDetail(
 
   const { data: snaps } = await supabase
     .from("manager_snapshots")
-    .select("day, team_value, points, streak, squad_size")
+    .select("day, team_value, points, streak, squad_size, cash_actual")
     .eq("league_id", league.id)
     .eq("manager_id", managerId)
     .order("day", { ascending: true });
@@ -282,18 +292,23 @@ export async function getManagerDetail(
     points: (s.points as number) ?? null,
     streak: (s.streak as number) ?? null,
     squadSize: (s.squad_size as number) ?? null,
+    cashActual: (s.cash_actual as number) ?? null,
   }));
   const latest = history.length > 0 ? history[history.length - 1] : null;
 
+  const isMe = Boolean(mgr.is_me);
+  const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
   const transfersByManager = await getTransfersByManager(league.id);
-  const transfers = (transfersByManager.get(managerId) ?? []).sort((a, b) =>
-    (b.ts ?? "").localeCompare(a.ts ?? ""),
-  );
+  const transfers = (transfersByManager.get(managerId) ?? [])
+    .filter((t) => sinceMs == null || (t.ts != null && Date.parse(t.ts) >= sinceMs))
+    .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
 
-  const cash =
+  // Eigener Manager: exakter Kontostand aus /me/budget, sonst Rekonstruktion.
+  const reconstructed =
     transfers.length > 0
       ? reconstructCash(transfers, { startBudget: league.startBudget })
       : null;
+  const cash = isMe && latest?.cashActual != null ? latest.cashActual : reconstructed;
   const teamValue = latest?.teamValue ?? null;
   const bid = cash != null && teamValue != null ? maxBid(cash, teamValue) : null;
 
