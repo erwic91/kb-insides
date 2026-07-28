@@ -14,6 +14,11 @@ Kickbase verbinden und darüber ihre Ligen + Daten gezogen bekommen.
 | Kickbase-Anbindung | **Jeder verbindet seinen eigenen Kickbase** (Token-basiert) |
 | Kickbase-Passwort | wird **nie dauerhaft gespeichert** — nur einmal gegen Tokens getauscht |
 | Vorgehen | erst dieses Design, dann Umsetzung in Phasen |
+| Accounts pro Person | **1:1** — ein Kickbase-Account je App-Nutzer |
+| Liga-Einstellungen ändern | **jedes verbundene Mitglied** darf ändern |
+| Scope | **privat, nur auf Einladung** (kein öffentliches Marketing) |
+| Datenlöschung (Retention) | Liga-Daten **30 Tage** nach Trennen der letzten Connection löschen |
+| Kosten | **Free-Tiers bevorzugen**; nötige Kosten trägt der Betreiber |
 
 **Leitprinzip: Identität ≠ Datenquelle.** Der App-Login (wer bist du bei uns)
 ist strikt getrennt vom Kickbase-Token (womit ziehen wir Daten). Kickbase bietet
@@ -291,14 +296,36 @@ Heute: eine env-Liga-Liste, ein Token. Neu:
 - Datenschutzerklärung/Impressum, Retention-Job.
 - Last-/Block-Tests mit mehreren Accounts.
 
-## 12. Offene Fragen
+## 12. Geklärte Fragen (Entscheidungen)
 
-1. **Mehrere Kickbase-Accounts pro Person?** Aktuell 1:1 angenommen
-   (`kb_connections` PK = `user_id`). Bei Bedarf → eigene `id` + `unique(user_id,
-   kb_user_id)`.
-2. **Retention** nach Trennen der letzten Liga-Connection (behalten vs. löschen,
-   Frist)?
-3. **Liga-Einstellungen** — wer darf sie ändern (jedes Mitglied vs. Liga-Admin)?
-4. **Scope** — bewusst privat/invite-only starten? (Empfehlung: ja.)
-5. **Kosten/Betrieb** — Supabase-Plan, Vercel-Cron-Limits bei mehr Ligen.
+1. **Kickbase-Accounts pro Person:** **1:1**. `kb_connections` PK = `user_id`
+   bleibt. Keine Mehrfach-Accounts.
+2. **Retention:** Wird die **letzte** verbundene Connection einer Liga getrennt,
+   werden deren liga-geteilte Daten nach **30 Tagen** gelöscht (Aufschub erlaubt
+   Reconnect ohne Datenverlust). Nutzer-private Daten (`user_budget`,
+   `kb_connections`) werden beim Trennen **sofort** gelöscht.
+3. **Liga-Einstellungen:** **jedes verbundene Mitglied** der Liga darf sie ändern
+   (kein separates Admin-Konzept nötig). `start_budget`, `tracking_since`,
+   `include_history`, `bonus_mode` bleiben pro Liga.
+4. **Scope:** **privat, nur auf Einladung.** Kein öffentliches Marketing; Zugang
+   via Einladungs-/Zugangscode (reduziert ToS-/Datenschutz-Risiko).
+5. **Kosten:** Free-Tiers bevorzugen, Details in §13.
+
+## 13. Kosten & Betrieb
+
+Ziel: **auf Free-Tiers bleiben**; anfallende Kosten trägt der Betreiber.
+
+- **Supabase Free:** ~500 MB DB, Auth inklusive (Magic-Link), reicht für
+  invite-only mit überschaubarer Nutzer-/Ligazahl. Bei Wachstum → Pro (~25 $/mo).
+- **Vercel:** Achtung — der bestehende `maxDuration = 120` und mehrere Cron-Jobs
+  sind faktisch **Pro-Features** (Hobby deckelt Funktionslaufzeit und Cron-Umfang).
+  Solange privat/klein, lässt sich der Collector ggf. in kürzere Läufe splitten,
+  um Hobby-Limits zu halten; sauberer ist Vercel Pro (~20 $/mo).
+- **E-Mail (Magic-Link):** Supabase-Default-SMTP hat niedrige Limits; für
+  zuverlässige Zustellung ggf. eigenen SMTP/Resend (Free-Tier) anbinden.
+- **Kostenhebel bleibt der Liga-Dedupe:** eine Liga wird pro Lauf nur einmal
+  gesammelt, unabhängig von der Mitgliederzahl — hält API- und Rechenlast flach.
+
+Empfehlung: Start komplett auf Free-Tiers (Supabase Free + Vercel, Collector in
+kurze Läufe gesplittet). Erst bei spürbarem Wachstum auf Pro wechseln.
 ```
