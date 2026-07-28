@@ -186,6 +186,52 @@ export async function activateLeague(
   return decision;
 }
 
+export interface ActiveConnection {
+  userId: string;
+  kbUserId: string;
+  activeLeagueId: string;
+}
+
+/**
+ * Alle aktiven Verbindungen MIT gesetzter aktiver Liga (für den Collector).
+ * Service-Role — läuft ohne Nutzer-Session.
+ */
+export async function getActiveConnections(): Promise<ActiveConnection[]> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("kb_connections")
+    .select("user_id, kb_user_id, active_league_id")
+    .eq("status", "active")
+    .not("active_league_id", "is", null);
+  if (error) throw new Error(`Verbindungen laden fehlgeschlagen: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    userId: r.user_id as string,
+    kbUserId: r.kb_user_id as string,
+    activeLeagueId: r.active_league_id as string,
+  }));
+}
+
+/** Schreibt den nutzer-privaten exakten Kontostand (aus /me/budget). */
+export async function upsertUserBudget(
+  userId: string,
+  leagueId: string,
+  day: number,
+  cashActual: number | null,
+): Promise<void> {
+  const supabase = getServiceClient();
+  const { error } = await supabase.from("user_budget").upsert(
+    {
+      user_id: userId,
+      league_id: leagueId,
+      day,
+      cash_actual: cashActual,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,league_id,day" },
+  );
+  if (error) throw new Error(`user_budget schreiben fehlgeschlagen: ${error.message}`);
+}
+
 /**
  * Trennt die Verbindung: kb_connections + league_access des Nutzers löschen.
  * league_switch_lock BLEIBT erhalten (Anti-Umgehung der 7-Tage-Sperre).

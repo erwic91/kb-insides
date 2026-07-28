@@ -352,10 +352,23 @@ Heute: eine env-Liga-Liste, ein Token. Neu:
   - Ende-zu-Ende erst testbar, wenn die Env-Variablen (Phase 1) gesetzt sind und
     ein Nutzer eingeloggt + eine Liga aktiviert hat.
 
-**Phase 3 — Collector**
-- `runCollect` über `kb_connections` + Liga-Dedupe; `/me/budget` pro Connection
-  in `user_budget`.
-- `league_access`/Memberships beim Sammeln aktualisieren.
+**Phase 3 — Collector** (umgesetzt)
+- [x] `collectLeagueWide(leagueId, token)`: liga-weite Sammlung ohne
+  nutzer-private Daten (kein /me/budget, keine Kalibrierung, kein is_me).
+- [x] `runCollect()` connection-basiert: aktive Verbindungen laden, Ligen
+  **deduplizieren** (je Liga ein Token, genau ein Lauf), danach je Verbindung
+  `/me/budget` → `user_budget`. Fällt auf den env-Pfad zurück, solange es keine
+  Verbindungen gibt (Übergang).
+- [x] `runCollectForUser(userId)` + Route `POST /api/me/refresh` (per Session
+  authentifiziert): Refresh-Button ohne CRON_SECRET.
+- [x] `RefreshButton` nutzt jetzt `/api/me/refresh` (Session-Cookie).
+- [x] Token-Refresh je Verbindung via `ensureConnectionToken`; Fehlschlag →
+  `needs_reconnect`.
+- Offen / später:
+  - Selbstkalibrierung pro Nutzer (aus `user_budget`) neu aufbauen (Ersatz für die
+    entfernte geteilte `calibration`-Ansicht).
+  - Retention-Job (30 Tage nach Trennen der letzten Liga-Connection).
+  - Collector-Splitting für Vercel-Hobby-Limits, falls ohne Pro betrieben.
 
 **Phase 4 — Onboarding & Härtung**
 - Onboarding-UX, Reconnect-Hinweise, Konto-/Datenlöschung.
