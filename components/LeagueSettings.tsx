@@ -2,6 +2,7 @@
 
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { eur } from "../lib/format";
 
 const KEY_STORAGE = "kbinsides:collectKey";
 
@@ -133,7 +134,7 @@ export default function LeagueSettings({
             <b>Typ:</b> {typeLabel}
           </span>
           <span>
-            <b>Start-Budget:</b> {(current.startBudget / 1e6).toLocaleString("de-DE")} Mio
+            <b>Start-Budget:</b> {eur(current.startBudget)}
           </span>
           <span>
             <b>Start:</b> {fmtDate(current.trackingSince)}

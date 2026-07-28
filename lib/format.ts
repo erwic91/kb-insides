@@ -2,24 +2,18 @@
 
 const DE = "de-DE";
 
-/** Kompakte Euro-Angabe: 196,5 Mio € / 820 Tsd € / 540 €. `null` → „—". */
+/**
+ * Euro-Angabe: IMMER exakt bis auf den Euro, ohne Nachkommastellen, mit
+ * Tausenderpunkten (196.508.183 €). Keine „Mio/Tsd"-Kürzung mehr — im ganzen
+ * System werden Beträge auf den Euro genau angezeigt. `null` → „—".
+ */
 export function eur(n: number | null | undefined): string {
-  if (n == null || Number.isNaN(n)) return "—";
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) {
-    return `${(n / 1_000_000).toLocaleString(DE, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} Mio €`;
-  }
-  if (abs >= 1_000) {
-    return `${Math.round(n / 1_000).toLocaleString(DE)} Tsd €`;
-  }
-  return `${n.toLocaleString(DE)} €`;
-}
-
-/** Vollständige Euro-Angabe mit Tausenderpunkten: 196.508.183 €. */
-export function eurFull(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "—";
   return `${Math.round(n).toLocaleString(DE)} €`;
 }
+
+/** Alias von `eur` (beide exakt bis auf den Euro). */
+export const eurFull = eur;
 
 /** Vorzeichen-behaftete kompakte Euro-Angabe (+1,1 Mio € / −793 Tsd €). */
 export function eurSigned(n: number | null | undefined): string {

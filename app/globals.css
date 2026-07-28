@@ -667,10 +667,11 @@ code {
   background: var(--signal);
 }
 .bar-row .amt {
-  width: 96px;
+  width: 132px;
   text-align: right;
   font-family: var(--mono);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 /* ---------- Dashboard-Einblicke ---------- */
