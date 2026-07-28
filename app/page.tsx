@@ -274,7 +274,7 @@ export default async function DashboardPage({
       )}
 
       <div className="foot">
-        <b>Maximalgebot</b> = Kontostand + ⅓ × (Kaderwert + min(Kontostand, 0)) — die
+        <b>Maximalgebot</b> = Kontostand + 33 % × (Kaderwert + min(Kontostand, 0)) — die
         Kickbase-Regel. Kontostand, Maximalgebot &amp; Liquidität werden aus der vollständigen
         Transferhistorie rekonstruiert und nur in Manager-Ligen (gpm:2) angezeigt. Kaderwert,
         Punkte, Kadergröße und Aktivität kommen direkt aus der API.

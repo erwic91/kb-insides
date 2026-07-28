@@ -93,7 +93,7 @@ export default async function ManagerPage({
         <div className="card card-pad tile">
           <div className="label">Maximalgebot</div>
           <div className="value sm">{eur(m.maxBid)}</div>
-          <div className="hint">cash + ⅓ × Kaderwert</div>
+          <div className="hint">cash + 33 % × Kaderwert</div>
         </div>
       </div>
 

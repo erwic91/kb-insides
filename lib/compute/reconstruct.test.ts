@@ -31,22 +31,26 @@ describe("Kontorekonstruktion (echte 25 Transfers)", () => {
   });
 });
 
-describe("maxBid (Maximalgebot-Formel)", () => {
-  it("cash + ⅓ × teamValue bei positivem Konto", () => {
-    // 10.000.000 + ⅓ × 100.000.000 = 43.333.333
-    expect(maxBid(10_000_000, 100_000_000)).toBe(43_333_333);
+describe("maxBid (Maximalgebot-Formel, Faktor 0,33)", () => {
+  it("cash + 0,33 × teamValue bei positivem Konto", () => {
+    // 10.000.000 + 0,33 × 100.000.000 = 43.000.000
+    expect(maxBid(10_000_000, 100_000_000)).toBe(43_000_000);
   });
 
   it("kürzt bei Minuskonto um die Schuld (min(cash,0))", () => {
-    // -5.000.000 + ⅓ × (100.000.000 − 5.000.000) = -5.000.000 + 31.666.667
-    expect(maxBid(-5_000_000, 100_000_000)).toBe(26_666_667);
+    // -5.000.000 + 0,33 × (100.000.000 − 5.000.000) = -5.000.000 + 31.350.000
+    expect(maxBid(-5_000_000, 100_000_000)).toBe(26_350_000);
   });
 
-  it("offizielles Kickbase-FAQ-Beispiel: Konto-Untergrenze = −⅓ × (KW + neg. Konto)", () => {
-    // KW 100 Mio, Konto −10 Mio → Untergrenze −30 Mio (= ⅓ × 90).
-    // maxBid = weiterer Spielraum bis zur Untergrenze:
-    //   -10.000.000 + ⅓ × (100.000.000 − 10.000.000) = 20.000.000
-    expect(maxBid(-10_000_000, 100_000_000)).toBe(20_000_000);
+  it("Live-App-Beispiel (Eric W): Grenze bei 33 % des Kaderwerts", () => {
+    // Konto 39.593.674 €, Kaderwert 107.278.929 €. Die App sperrt bei 75,0 Mio.
+    //   39.593.674 + 0,33 × 107.278.929 = 74.995.721
+    expect(maxBid(39_593_674, 107_278_929)).toBe(74_995_721);
+  });
+
+  it("FAQ-Beispiel bleibt im Rahmen: KW 100 Mio, Konto −10 Mio", () => {
+    // -10.000.000 + 0,33 × (100.000.000 − 10.000.000) = 19.700.000 (Untergrenze −29,7 Mio ≈ −30)
+    expect(maxBid(-10_000_000, 100_000_000)).toBe(19_700_000);
   });
 });
 

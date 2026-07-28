@@ -6,8 +6,8 @@ describe("domain constants", () => {
     expect(START_BUDGET).toBe(200_000_000);
   });
 
-  it("Maximalgebot-Faktor ist ⅓ (offizielle FAQ: ⅓ × 90 = 30 exakt)", () => {
-    expect(MAX_BID_FACTOR).toBe(1 / 3);
+  it("Maximalgebot-Faktor ist 0,33 (an Live-App verifiziert: 33 % des Kaderwerts)", () => {
+    expect(MAX_BID_FACTOR).toBe(0.33);
   });
 
   it("Default-Kadenz ist 14 Tage", () => {
