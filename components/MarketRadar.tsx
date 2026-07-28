@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { MarketListing } from "../lib/db/queries";
+import type { BidAdvice } from "../lib/compute/bidadvisor";
 import { eur, eurFull, date } from "../lib/format";
 
 const FAV_KEY = "kbinsides:favorites";
@@ -42,11 +43,40 @@ function priceVsMv(price: number | null, mv: number | null): { text: string; cls
   return { text: `${sign}${(diff * 100).toFixed(0)} %`, cls };
 }
 
+/** Bid-Advisor-Zelle: „so hoch musst du bieten" je Angebot. */
+function bidTip(a: BidAdvice | undefined): { text: string; cls: string; title?: string } {
+  if (!a || a.verdict === "unknown") return { text: "—", cls: "muted" };
+  switch (a.verdict) {
+    case "free":
+      return { text: "freie Bahn", cls: "up", title: "Kein Gegner kann über dem Mindestpreis mitbieten." };
+    case "winnable":
+      return {
+        text: `≥ ${eur(a.mustBid)}`,
+        cls: "linklike",
+        title: `Stärkster Gegner: ${a.topRivalName} bis ${eur(a.topRivalMaxBid)}. Biete mehr, um sicher zu gewinnen.`,
+      };
+    case "contested":
+      return {
+        text: `${a.topRivalName} bis ${eur(a.topRivalMaxBid)}`,
+        cls: "down",
+        title: "Dieser Gegner kann dich überbieten.",
+      };
+    case "tooExpensive":
+      return { text: "über deinem Limit", cls: "muted" };
+    default:
+      return { text: "—", cls: "muted" };
+  }
+}
+
 export default function MarketRadar({
   listings,
+  advice,
+  showBids,
   leagueId,
 }: {
   listings: MarketListing[];
+  advice: Record<string, BidAdvice>;
+  showBids: boolean;
   leagueId: string;
 }) {
   const [favs, toggle] = useFavorites();
@@ -81,8 +111,10 @@ export default function MarketRadar({
           </div>
         </div>
         <p className="note" style={{ marginTop: 10, marginBottom: 0 }}>
-          „Jetzt am Markt" ist exakt. Die Rückkehr-Prognose (letztes Listing + Kadenz)
-          schärft sich, je länger <code>market_log</code> gesammelt wird.
+          „Jetzt am Markt" ist exakt.{" "}
+          {showBids
+            ? "Gebots-Tipp = höchstes konkurrierendes Maximalgebot (aus der Kontorekonstruktion). Freie Bahn heißt: dir kann keiner gefährlich werden."
+            : "Der Gebots-Tipp erscheint, sobald Start-Budget/Reset gesetzt sind (dann sind die Max-Gebote belastbar)."}
         </p>
       </div>
 
@@ -96,6 +128,7 @@ export default function MarketRadar({
               <th>Marktwert</th>
               <th>Preis</th>
               <th>vs. MV</th>
+              {showBids && <th className="l">Gebots-Tipp</th>}
               <th className="l">Anbieter</th>
               <th className="l">Läuft ab</th>
             </tr>
@@ -104,6 +137,7 @@ export default function MarketRadar({
             {rows.map((l) => {
               const cmp = priceVsMv(l.price, l.marketValue);
               const isFav = favs.has(l.playerId);
+              const tip = showBids ? bidTip(advice[l.playerId]) : null;
               return (
                 <tr key={l.playerId}>
                   <td className="l">
@@ -130,6 +164,11 @@ export default function MarketRadar({
                   <td title={eurFull(l.marketValue)}>{eur(l.marketValue)}</td>
                   <td title={eurFull(l.price)}>{eur(l.price)}</td>
                   <td className={cmp.cls}>{cmp.text}</td>
+                  {tip && (
+                    <td className={`l ${tip.cls}`} title={tip.title}>
+                      {tip.text}
+                    </td>
+                  )}
                   <td className="l">{l.offeredByName ?? "Kickbase"}</td>
                   <td className="l muted">{date(l.expiry)}</td>
                 </tr>
@@ -137,7 +176,7 @@ export default function MarketRadar({
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="l muted" style={{ padding: 24 }}>
+                <td colSpan={showBids ? 9 : 8} className="l muted" style={{ padding: 24 }}>
                   {onlyFavs
                     ? "Keine Favoriten am Markt."
                     : "Aktuell niemand am Markt (oder Collector noch nicht gelaufen)."}

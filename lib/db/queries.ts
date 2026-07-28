@@ -1,5 +1,6 @@
 import { getServiceClient } from "./client";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
+import { computeBidAdvice, type BidAdvice } from "../compute/bidadvisor";
 import { START_BUDGET } from "../compute/constants";
 import type { Direction } from "../ingest/transfers";
 import { ensureToken } from "../kickbase/session";
@@ -404,6 +405,29 @@ export async function getMarket(league: LeagueLite): Promise<MarketListing[]> {
       expiry: (r.expiry_ts as string) ?? null,
     };
   });
+}
+
+/**
+ * Bid-Advisor: Marktangebote + Gebotsberatung (stärkstes konkurrierendes
+ * Max-Gebot je Spieler). `advice` ist leer/„unknown", wenn keine belastbaren
+ * Max-Gebote vorliegen (z. B. vor dem Reset).
+ */
+export async function getBidAdvisor(
+  league: LeagueLite,
+): Promise<{ listings: MarketListing[]; advice: Map<string, BidAdvice> }> {
+  const [{ rows }, listings] = await Promise.all([
+    getManagerTable(league),
+    getMarket(league),
+  ]);
+  const advice = computeBidAdvice(
+    rows.map((r) => ({ id: r.id, name: r.name, isMe: r.isMe, maxBid: r.maxBid })),
+    listings.map((l) => ({
+      playerId: l.playerId,
+      floor: l.price ?? l.marketValue ?? null,
+      offeredBy: l.offeredBy,
+    })),
+  );
+  return { listings, advice };
 }
 
 export interface PlayerDetail {
