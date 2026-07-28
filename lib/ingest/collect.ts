@@ -28,7 +28,14 @@ import {
   upsertCalibration,
   markIsMe,
   getLeagueMoneyBasis,
+  replaceSquadPlayers,
+  type SquadPlayerRow,
 } from "../db/ingest";
+import type { PlayerRow } from "./market";
+
+const SQUAD_POS: Record<number, string> = { 1: "TW", 2: "ABW", 3: "MF", 4: "ANG" };
+const posLabel = (pos: number | null | undefined): string | null =>
+  pos == null ? null : (SQUAD_POS[pos] ?? String(pos));
 
 /**
  * Collector: iteriert über alle konfigurierten Ligen (KICKBASE_LEAGUE_IDS).
@@ -137,6 +144,8 @@ async function collectOneLeague(
     // Kaderwert; dann aus dem Manager-Dashboard (`tv`/`tp`) nachziehen.
     let transferCount = 0;
     let ownTransfers: TransferRow[] = [];
+    const squadPlayers: SquadPlayerRow[] = []; // Kaderbestand (Top-50 / Besitz)
+    const squadPlayerMeta: PlayerRow[] = []; // Namen für die players-Tabelle
     const warnings: string[] = []; // stille Fehler surfacen (Debugging)
     const warn = (msg: string) => {
       if (warnings.length < 5) warnings.push(msg);
@@ -151,10 +160,27 @@ async function collectOneLeague(
         try {
           const squad = await fetchManagerSquad(leagueId, manager.id, { token });
           snap.squad_size = squad.it.length;
-          if (squad.it.length > 0) {
-            const sum = squad.it.reduce((s, p) => s + (p.mv ?? 0), 0);
-            if (hasTv(sum)) snap.team_value = sum;
+          let sum = 0;
+          for (const pl of squad.it) {
+            sum += pl.mv ?? 0;
+            if (pl.i == null) continue;
+            squadPlayers.push({
+              league_id: leagueId,
+              player_id: pl.i,
+              manager_id: manager.id,
+              points: pl.p ?? null,
+              avg_points: pl.ap ?? null,
+              market_value: pl.mv ?? null,
+              position: posLabel(pl.pos),
+            });
+            squadPlayerMeta.push({
+              id: pl.i,
+              name: pl.n ?? null,
+              team: pl.tid ?? null,
+              position: posLabel(pl.pos),
+            });
           }
+          if (hasTv(sum)) snap.team_value = sum;
         } catch (e) {
           warn(`squad ${manager.id}: ${(e as Error).message}`);
         }
@@ -191,6 +217,11 @@ async function collectOneLeague(
 
     // Snapshots erst jetzt schreiben — mit angereichertem Kaderwert/Punkten.
     await upsertManagerSnapshots(rows.snapshots);
+
+    // Kaderbestand ablegen (Top-50 / Besitz). Namen zuerst (Markt überschreibt
+    // gleich mit den vollständigeren Namen), dann den Bestand ersetzen.
+    if (squadPlayerMeta.length > 0) await upsertPlayers(squadPlayerMeta);
+    await replaceSquadPlayers(leagueId, squadPlayers);
     await politeDelay();
 
     // M6 — Markt.

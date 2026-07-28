@@ -78,6 +78,39 @@ export async function setLeagueTrackingSince(
   if (error) throw new Error(`tracking_since setzen fehlgeschlagen: ${error.message}`);
 }
 
+export interface SquadPlayerRow {
+  league_id: string;
+  player_id: string;
+  manager_id: string;
+  points: number | null;
+  avg_points: number | null;
+  market_value: number | null;
+  position: string | null;
+}
+
+/** Ersetzt den Kaderbestand einer Liga (delete + insert) — keine Karteileichen. */
+export async function replaceSquadPlayers(
+  leagueId: string,
+  rows: SquadPlayerRow[],
+): Promise<void> {
+  const supabase = getServiceClient();
+  const { error: delErr } = await supabase
+    .from("squad_players")
+    .delete()
+    .eq("league_id", leagueId);
+  if (delErr) throw new Error(`squad_players löschen fehlgeschlagen: ${delErr.message}`);
+  if (rows.length === 0) return;
+  // Dedupe auf (league, player) — ein Spieler gehört genau einem Manager.
+  const seen = new Set<string>();
+  const unique = rows.filter((r) => {
+    if (seen.has(r.player_id)) return false;
+    seen.add(r.player_id);
+    return true;
+  });
+  const { error } = await supabase.from("squad_players").insert(unique);
+  if (error) throw new Error(`squad_players insert fehlgeschlagen: ${error.message}`);
+}
+
 /** Löscht Transfers vor einem Zeitpunkt (saubere Basis beim Tracking-Start). */
 export async function deleteTransfersBefore(
   leagueId: string,

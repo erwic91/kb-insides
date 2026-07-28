@@ -88,6 +88,8 @@ export const SquadPlayerSchema = z
     n: z.coerce.string().nullish(), // Nachname
     pos: z.coerce.number().nullish(), // Position
     mv: z.coerce.number().nullish(), // Marktwert
+    p: z.coerce.number().nullish(), // Punkte (Saison)
+    ap: z.coerce.number().nullish(), // Ø-Punkte
     st: z.coerce.number().nullish(), // Status (0 = fit; >0 = Ausfall/angeschlagen)
     lst: z.coerce.number().nullish(), // Aufstellungs-Status
     tid: z.coerce.string().nullish(), // Team-ID

@@ -410,6 +410,59 @@ export async function getMarket(league: LeagueLite): Promise<MarketListing[]> {
   });
 }
 
+export interface TopPlayer {
+  playerId: string;
+  name: string;
+  position: string | null;
+  team: string | null;
+  points: number | null;
+  avgPoints: number | null;
+  marketValue: number | null;
+  ownerId: string;
+  ownerName: string;
+}
+
+/** Top-Spieler der Liga (aus dem Kaderbestand), sortiert nach Saisonpunkten. */
+export async function getTopPlayers(league: LeagueLite, limit = 50): Promise<TopPlayer[]> {
+  const supabase = safeClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("squad_players")
+    .select("player_id, manager_id, points, avg_points, market_value, position")
+    .eq("league_id", league.id)
+    .order("points", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error || !data || data.length === 0) return [];
+
+  const pids = [...new Set(data.map((r) => r.player_id as string))];
+  const mids = [...new Set(data.map((r) => r.manager_id as string))];
+  const [pRes, mRes] = await Promise.all([
+    supabase.from("players").select("id, name, position, team").in("id", pids),
+    supabase.from("managers").select("id, name").eq("league_id", league.id).in("id", mids),
+  ]);
+  const pmap = new Map<string, { name?: string; position?: string; team?: string }>();
+  for (const p of pRes.data ?? [])
+    pmap.set(p.id as string, { name: p.name as string, position: p.position as string, team: p.team as string });
+  const mmap = new Map<string, string>();
+  for (const m of mRes.data ?? []) mmap.set(m.id as string, (m.name as string) ?? (m.id as string));
+
+  return data.map((r) => {
+    const pid = r.player_id as string;
+    const meta = pmap.get(pid);
+    return {
+      playerId: pid,
+      name: meta?.name ?? `#${pid}`,
+      position: meta?.position ?? (r.position as string) ?? null,
+      team: meta?.team ?? null,
+      points: (r.points as number) ?? null,
+      avgPoints: (r.avg_points as number) ?? null,
+      marketValue: (r.market_value as number) ?? null,
+      ownerId: r.manager_id as string,
+      ownerName: mmap.get(r.manager_id as string) ?? (r.manager_id as string),
+    };
+  });
+}
+
 /**
  * Bid-Advisor: Marktangebote + Gebotsberatung (stärkstes konkurrierendes
  * Max-Gebot je Spieler). `advice` ist leer/„unknown", wenn keine belastbaren

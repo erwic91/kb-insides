@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { resolveLeague, getManagerTable } from "../../lib/db/queries";
+import { resolveLeague, getManagerTable, getTopPlayers } from "../../lib/db/queries";
 import { eur, eurFull, num } from "../../lib/format";
 
 export const dynamic = "force-dynamic";
@@ -27,10 +27,14 @@ export default async function LigaPage({
     );
   }
 
-  const { day, rows } = await getManagerTable(league);
+  const [{ day, rows }, topPlayers] = await Promise.all([
+    getManagerTable(league),
+    getTopPlayers(league, 50),
+  ]);
   const active = rows.filter((r) => r.active);
   const byTv = [...active].sort((a, b) => (b.teamValue ?? 0) - (a.teamValue ?? 0));
   const maxTv = byTv[0]?.teamValue ?? 0;
+  const href = (base: string) => `${base}?league=${encodeURIComponent(league.id)}`;
 
   return (
     <main className="wrap">
@@ -99,6 +103,54 @@ export default async function LigaPage({
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h2>Top 50 Spieler</h2>
+          <span className="note">beste Spieler der Liga nach Saisonpunkten</span>
+        </div>
+        {topPlayers.length === 0 ? (
+          <div className="notice">
+            Der Kaderbestand wird beim nächsten Sammel-Lauf erfasst — danach erscheinen
+            hier die besten Spieler der Liga (inkl. Besitzer).
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th className="l">#</th>
+                  <th className="l">Spieler</th>
+                  <th className="l">Pos</th>
+                  <th>Punkte</th>
+                  <th>Ø</th>
+                  <th>Marktwert</th>
+                  <th className="l">Besitzer</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topPlayers.map((p, i) => (
+                  <tr key={p.playerId}>
+                    <td className="l rank">{i + 1}</td>
+                    <td className="l">
+                      <Link href={href(`/player/${p.playerId}`)} className="linklike">
+                        {p.name}
+                      </Link>
+                    </td>
+                    <td className="l muted">{p.position ?? "—"}</td>
+                    <td>{num(p.points)}</td>
+                    <td className="muted">{num(p.avgPoints)}</td>
+                    <td title={eurFull(p.marketValue)}>{eur(p.marketValue)}</td>
+                    <td className="l">
+                      <Link href={href(`/manager/${p.ownerId}`)}>{p.ownerName}</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </main>
   );
