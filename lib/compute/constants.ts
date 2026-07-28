@@ -7,11 +7,12 @@
 export const START_BUDGET = 200_000_000;
 
 /**
- * Maximalgebot-Faktor: offizielle Kickbase-Regel = 33 % des Kaderwerts.
- * Kalibrierung 0.33 vs. 1/3 ist noch offen (SPEC §12) — daher als benannte,
- * leicht änderbare Konstante gehalten.
+ * Maximalgebot-/Überzieh-Faktor der offiziellen Kickbase-Regel. An der offiziellen
+ * FAQ verifiziert: Kaderwert 100 Mio, Konto −10 Mio → Konto darf nicht unter
+ * −30 Mio; 30 = ⅓ × (100 − 10) = ⅓ × 90 EXAKT (0,33 ergäbe 29,7). Also ⅓, nicht
+ * 0,33. Formel: maxBid = cash + FAKTOR × (Kaderwert + min(cash, 0)).
  */
-export const MAX_BID_FACTOR = 0.33;
+export const MAX_BID_FACTOR = 1 / 3;
 
 /** Default-Kadenz für die Markt-Rückkehr-Prognose in Tagen (SPEC §7). */
 export const DEFAULT_MARKET_CADENCE_DAYS = 14;

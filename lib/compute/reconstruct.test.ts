@@ -32,14 +32,21 @@ describe("Kontorekonstruktion (echte 25 Transfers)", () => {
 });
 
 describe("maxBid (Maximalgebot-Formel)", () => {
-  it("cash + 0.33 × teamValue bei positivem Konto", () => {
-    // 10.000.000 + 0.33 × 100.000.000 = 43.000.000
-    expect(maxBid(10_000_000, 100_000_000)).toBe(43_000_000);
+  it("cash + ⅓ × teamValue bei positivem Konto", () => {
+    // 10.000.000 + ⅓ × 100.000.000 = 43.333.333
+    expect(maxBid(10_000_000, 100_000_000)).toBe(43_333_333);
   });
 
   it("kürzt bei Minuskonto um die Schuld (min(cash,0))", () => {
-    // -5.000.000 + 0.33 × (100.000.000 − 5.000.000) = -5.000.000 + 31.350.000
-    expect(maxBid(-5_000_000, 100_000_000)).toBe(26_350_000);
+    // -5.000.000 + ⅓ × (100.000.000 − 5.000.000) = -5.000.000 + 31.666.667
+    expect(maxBid(-5_000_000, 100_000_000)).toBe(26_666_667);
+  });
+
+  it("offizielles Kickbase-FAQ-Beispiel: Konto-Untergrenze = −⅓ × (KW + neg. Konto)", () => {
+    // KW 100 Mio, Konto −10 Mio → Untergrenze −30 Mio (= ⅓ × 90).
+    // maxBid = weiterer Spielraum bis zur Untergrenze:
+    //   -10.000.000 + ⅓ × (100.000.000 − 10.000.000) = 20.000.000
+    expect(maxBid(-10_000_000, 100_000_000)).toBe(20_000_000);
   });
 });
 
