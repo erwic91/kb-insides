@@ -8,7 +8,7 @@ import {
   type ManagerTableRow,
 } from "../lib/db/queries";
 import { computeBidAdvice } from "../lib/compute/bidadvisor";
-import { eur, eurSigned, num, pct } from "../lib/format";
+import { eur, eurFull, eurSigned, num, pct } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
 import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
@@ -180,10 +180,10 @@ export default async function DashboardPage({
         {showMoney && (
           <div className="card card-pad tile">
             <div className="label">Dein Konto{me?.cashExact ? "" : " (rekonstruiert)"}</div>
-            <div className="value sm">{eur(me?.cash ?? null)}</div>
+            <div className="value sm">{eurFull(me?.cash ?? null)}</div>
             <div className="hint">
               {me?.cashExact ? "exakt aus /me/budget" : "rekonstruiert"}
-              {me?.maxBid != null ? ` · Max. Gebot ${eur(me.maxBid)}` : ""}
+              {me?.maxBid != null ? ` · Max. Gebot ${eurFull(me.maxBid)}` : ""}
             </div>
           </div>
         )}

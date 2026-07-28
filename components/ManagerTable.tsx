@@ -3,7 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { ManagerTableRow } from "../lib/db/queries";
-import { eur, num, pct } from "../lib/format";
+import { eur, eurFull, num, pct } from "../lib/format";
+
+/** Euro-Spalten: hier zeigt der Hover den exakten Wert bis auf den Euro. */
+const EURO_KEYS = new Set<Key>(["teamValue", "cash", "maxBid", "total"]);
 
 type Key =
   | "teamValue"
@@ -123,15 +126,20 @@ export default function ManagerTable({
                   {!r.active && <span className="warnflag">inaktiv</span>}
                 </div>
               </td>
-              {cols.map((c) => (
-                <td
-                  key={c.key}
-                  className="num"
-                  style={c.highlight ? { fontWeight: 600, color: "var(--signal)" } : undefined}
-                >
-                  {c.render(r)}
-                </td>
-              ))}
+              {cols.map((c) => {
+                const raw = r[c.key];
+                const exact = EURO_KEYS.has(c.key) && raw != null ? eurFull(raw) : undefined;
+                return (
+                  <td
+                    key={c.key}
+                    className="num"
+                    title={exact}
+                    style={c.highlight ? { fontWeight: 600, color: "var(--signal)" } : undefined}
+                  >
+                    {c.render(r)}
+                  </td>
+                );
+              })}
             </tr>
           ))}
           {sorted.length === 0 && (
