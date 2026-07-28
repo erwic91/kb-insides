@@ -3,6 +3,11 @@ import { loadAuth, saveAuth } from "../db/kbAuth";
 import { getSetting, setSetting } from "../db/settings";
 import { requireEnv } from "../env";
 import type { KbFetchOptions } from "./http";
+import {
+  getDecryptedTokens,
+  updateStoredTokens,
+  markNeedsReconnect,
+} from "../db/connections";
 
 const OWN_USER_ID_KEY = "own_user_id";
 
@@ -34,6 +39,32 @@ export async function ensureToken(opts: KbFetchOptions = {}): Promise<string> {
   const tokens = await freshLogin(opts);
   await saveAuth(tokens);
   return tokens.accessToken;
+}
+
+/**
+ * Multi-User: gültiges Access-Token für die Kickbase-Verbindung EINES App-Nutzers
+ * (aus `kb_connections`, verschlüsselt). Refresht bei baldigem Ablauf und
+ * persistiert das Ergebnis; scheitert der Refresh, wird die Verbindung als
+ * `needs_reconnect` markiert und geworfen. Ersetzt in Phase 3 die env-basierte
+ * `ensureToken` im Collector; die env-Variante bleibt bis dahin bestehen.
+ */
+export async function ensureConnectionToken(
+  userId: string,
+  opts: KbFetchOptions = {},
+): Promise<string> {
+  const stored = await getDecryptedTokens(userId);
+  if (!stored) throw new Error(`Keine Kickbase-Verbindung für Nutzer ${userId}.`);
+
+  if (!isExpiringSoon(stored.expiresAt)) return stored.accessToken;
+
+  try {
+    const refreshed = await refreshTokens(stored.accessToken, stored.refreshToken, opts);
+    await updateStoredTokens(userId, refreshed);
+    return refreshed.accessToken;
+  } catch (e) {
+    await markNeedsReconnect(userId);
+    throw new Error(`Kickbase-Token-Refresh fehlgeschlagen (Nutzer ${userId}): ${(e as Error).message}`);
+  }
 }
 
 export async function freshLogin(opts: KbFetchOptions = {}): Promise<KbTokens> {

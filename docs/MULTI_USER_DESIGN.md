@@ -317,12 +317,20 @@ Heute: eine env-Liga-Liste, ein Token. Neu:
 
 ## 11. Phasenplan (Umsetzung)
 
-**Phase 1 — Auth-Fundament**
-- Supabase Auth (Magic-Link) aktivieren; Login-/Logout-UI.
-- Migration: `profiles`, `kb_connections`, `league_access`, `user_budget`.
-- Token-Krypto-Modul (`lib/security/crypto.ts`), `KB_TOKEN_ENC_KEY`.
-- „Kickbase verbinden/trennen"-Flow (Server-Actions) inkl. Einwilligung.
-- `session.ts`: Token nicht mehr aus env, sondern aus `kb_connections`.
+**Phase 1 — Auth-Fundament** (weitgehend umgesetzt)
+- [x] Migration `0009_multiuser_auth`: `profiles`, `kb_connections`,
+  `league_access`, `user_budget`, `league_switch_lock` (+ RLS own-row).
+- [x] Token-Krypto (`lib/security/crypto.ts`, AES-256-GCM) + Tests; `KB_TOKEN_ENC_KEY`.
+- [x] 7-Tage-Wechsel-Logik (`lib/compute/leagueBinding.ts`) + Tests.
+- [x] Verbindungs-DB-Layer (`lib/db/connections.ts`): store/activate/disconnect.
+- [x] Supabase-Auth-Clients (browser/server/middleware, `@supabase/ssr`).
+- [x] Magic-Link-Login (`/login`, `/auth/confirm`, `/auth/signout`).
+- [x] „Kickbase verbinden/trennen/Liga wählen"-Flow (`/connect`) inkl. Einwilligung.
+- [x] `session.ts`: `ensureConnectionToken(userId)` aus `kb_connections`.
+- [ ] Offen: Supabase-Auth im Dashboard konfigurieren (SMTP/Redirect-URLs),
+  `NEXT_PUBLIC_*` + `KB_TOKEN_ENC_KEY` in Vercel setzen, End-to-End-Test.
+- Hinweis: Middleware ist **nicht-blockierend**; das bestehende Dashboard bleibt
+  erreichbar. Der Route-Schutz + RLS-Lesepfad kommen in Phase 2.
 
 **Phase 2 — Mandantentrennung**
 - RLS auf allen liga-geteilten Tabellen + `user_budget` + `kb_connections`.
