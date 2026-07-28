@@ -360,6 +360,8 @@ export interface MarketListing {
   offeredBy: string | null;
   offeredByName: string | null;
   expiry: string | null;
+  /** Marktwert-Trend: 1 = steigend, 2 = fallend, null = unbekannt. */
+  trend: number | null;
 }
 
 export async function getMarket(league: LeagueLite): Promise<MarketListing[]> {
@@ -368,7 +370,7 @@ export async function getMarket(league: LeagueLite): Promise<MarketListing[]> {
   const { data, error } = await supabase
     .from("market_log")
     .select(
-      "player_id, price, market_value, offered_by, offered_by_name, expiry_ts, on_market",
+      "player_id, price, market_value, offered_by, offered_by_name, expiry_ts, on_market, trend",
     )
     .eq("league_id", league.id)
     .eq("on_market", true)
@@ -403,6 +405,7 @@ export async function getMarket(league: LeagueLite): Promise<MarketListing[]> {
       offeredBy: (r.offered_by as string) ?? null,
       offeredByName: (r.offered_by_name as string) ?? null,
       expiry: (r.expiry_ts as string) ?? null,
+      trend: (r.trend as number) ?? null,
     };
   });
 }

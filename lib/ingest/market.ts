@@ -36,6 +36,7 @@ export interface MarketLogRow {
   market_value: number | null;
   offered_by: string | null;
   offered_by_name: string | null;
+  trend: number | null; // mvt: 1 = steigend, 2 = fallend
 }
 
 export interface PlayerMvRow {
@@ -84,6 +85,7 @@ export function parseMarket(
       market_value: it.mv ?? null,
       offered_by: it.u?.i ?? null,
       offered_by_name: it.u?.n ?? null,
+      trend: it.mvt ?? null,
     });
 
     if (day != null && it.mv != null) {
