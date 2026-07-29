@@ -1,5 +1,6 @@
 import { createSupabaseServerClient } from "../supabase/server";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
+import { loginBonusSinceReset } from "../compute/loginBonus";
 import { computeBidAdvice, type BidAdvice } from "../compute/bidadvisor";
 import { START_BUDGET } from "../compute/constants";
 import type { Direction } from "../ingest/transfers";
@@ -223,6 +224,9 @@ export async function getManagerTable(
   const [myAccess, myBudget] = await Promise.all([getMyAccess(), getMyBudget(league.id)]);
   const myCashActual = myBudget.get(day) ?? null;
   const now = Date.now();
+  // Täglicher Login-Bonus (ab Reset/Tracking-Start, Annahme: täglich aktiv).
+  // Fließt als Prämie in die Gegner-Rekonstruktion; das eigene Konto bleibt exakt.
+  const loginBonus = loginBonusSinceReset(league.trackingSince, now);
   // Ab Startzeitpunkt rechnen: Kontostand/Aktivität nur aus Transfers seit dem
   // Tracking-Start (start_budget ist die Budget-Basis genau zu diesem Zeitpunkt).
   const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
@@ -248,7 +252,10 @@ export async function getManagerTable(
     // 200 Mio stehen, bevor der erste Kauf läuft). Dieselbe Formel, leere Summe.
     const reconstructed =
       league.startBudget > 0
-        ? reconstructCash(myTransfers ?? [], { startBudget: league.startBudget })
+        ? reconstructCash(myTransfers ?? [], {
+            startBudget: league.startBudget,
+            prizes: loginBonus,
+          })
         : null;
     const cash = cashActual ?? reconstructed;
     const cashExact = cashActual != null;
@@ -357,11 +364,12 @@ export async function getManagerDetail(
     .filter((t) => sinceMs == null || (t.ts != null && Date.parse(t.ts) >= sinceMs))
     .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
 
-  // Eigener Manager: exakter Kontostand aus /me/budget, sonst Rekonstruktion.
-  // Auch ohne Transfers rekonstruieren (= Start-Budget), sofern eine Basis da ist.
+  // Eigener Manager: exakter Kontostand aus /me/budget, sonst Rekonstruktion
+  // (inkl. geschätztem Login-Bonus ab Reset). Auch ohne Transfers = Start-Budget.
+  const loginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
   const reconstructed =
     league.startBudget > 0
-      ? reconstructCash(transfers, { startBudget: league.startBudget })
+      ? reconstructCash(transfers, { startBudget: league.startBudget, prizes: loginBonus })
       : null;
   const cash = cashActual != null ? cashActual : reconstructed;
   const teamValue = latest?.teamValue ?? null;
