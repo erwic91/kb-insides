@@ -5,6 +5,7 @@ import {
   getCalibration,
   getMarket,
   getSquadLandscape,
+  getMyAccess,
   type ManagerTableRow,
 } from "../lib/db/queries";
 import { computeBidAdvice } from "../lib/compute/bidadvisor";
@@ -32,8 +33,32 @@ export default async function DashboardPage({
   const { league: requested } = await searchParams;
   const league = await resolveLeague(requested);
 
-  // Angemeldet (Middleware), aber keine aktive Liga → zum Verbinden schicken.
-  if (!league) redirect("/connect");
+  if (!league) {
+    // Keine Liga-Daten. Unterscheiden: gar keine aktive Liga → /connect;
+    // aktive Liga, aber noch nichts gesammelt → Lade-Zustand mit Sammel-Button.
+    const access = await getMyAccess();
+    if (!access) redirect("/connect");
+    return (
+      <main className="wrap">
+        <div className="page-head" style={{ justifyContent: "space-between" }}>
+          <div>
+            <span className="eyebrow">Ligaaufklärung</span>
+            <h1>Liga aktiviert</h1>
+            <p className="sub">Für diese Liga liegen noch keine Daten vor.</p>
+          </div>
+          <RefreshButton leagueId={access!.leagueId} />
+        </div>
+        <div className="notice">
+          Klicke auf <b>Aktualisieren</b>, um Ranking, Transfers und Markt das erste Mal zu
+          sammeln. Danach erscheint hier dein Dashboard. (Der tägliche Sammel-Lauf holt die
+          Daten sonst automatisch.)
+        </div>
+        <div className="note" style={{ marginTop: 12 }}>
+          <Link href="/connect" className="linklike">Zurück zu deinen Ligen</Link>
+        </div>
+      </main>
+    );
+  }
 
   const { day, rows } = await getManagerTable(league);
   const [calibration, marketListings, landscape] = await Promise.all([

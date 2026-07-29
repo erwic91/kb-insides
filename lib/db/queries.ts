@@ -82,7 +82,7 @@ export interface MyAccess {
   leagueId: string;
   kbManagerId: string;
 }
-async function getMyAccess(): Promise<MyAccess | null> {
+export async function getMyAccess(): Promise<MyAccess | null> {
   const supabase = await getReadClient();
   if (!supabase) return null;
   const { data } = await supabase

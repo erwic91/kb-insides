@@ -120,9 +120,14 @@ export default async function ConnectPage({
               </strong>
               {maxLeagues > 1 ? " · Premium" : ""}.
             </p>
-            <form action={disconnectKickbase} style={{ marginTop: 12 }}>
-              <button className="btn" type="submit">Kickbase trennen</button>
-            </form>
+            <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
+              <form action={disconnectKickbase}>
+                <button className="btn" type="submit">Kickbase trennen</button>
+              </form>
+              {activeCount > 0 && (
+                <Link href="/" className="linklike">Zum Dashboard →</Link>
+              )}
+            </div>
           </div>
 
           <section className="section">
