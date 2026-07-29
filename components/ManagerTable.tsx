@@ -4,9 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { ManagerTableRow } from "../lib/db/queries";
 import { eur, eurFull, num, pct } from "../lib/format";
-
-/** Euro-Spalten: hier zeigt der Hover den exakten Wert bis auf den Euro. */
-const EURO_KEYS = new Set<Key>(["teamValue", "cash", "maxBid", "total"]);
+import InfoDot from "./InfoDot";
 
 type Key =
   | "teamValue"
@@ -14,9 +12,13 @@ type Key =
   | "squadSize"
   | "lastActiveDays"
   | "cash"
+  | "loginBonus"
   | "maxBid"
   | "liquidity"
   | "total";
+
+/** Euro-Spalten: hier zeigt der Hover den exakten Wert bis auf den Euro. */
+const EURO_KEYS = new Set<Key>(["teamValue", "cash", "loginBonus", "maxBid", "total"]);
 
 interface Col {
   key: Key;
@@ -24,6 +26,8 @@ interface Col {
   money?: boolean; // nur bei gpm:2 sinnvoll (aus Transfers rekonstruiert)
   render: (r: ManagerTableRow) => string;
   highlight?: boolean;
+  /** Erklärung auf Hover (Spaltenkopf). */
+  info?: string;
 }
 
 const COLS: Col[] = [
@@ -33,6 +37,7 @@ const COLS: Col[] = [
   {
     key: "lastActiveDays",
     label: "Aktivität",
+    info: "Tage seit dem letzten erfassten Transfer dieses Managers.",
     render: (r) =>
       r.lastActiveDays == null
         ? "—"
@@ -40,15 +45,42 @@ const COLS: Col[] = [
           ? "heute"
           : `vor ${r.lastActiveDays} T`,
   },
-  { key: "cash", label: "Kontostand", money: true, render: (r) => eur(r.cash) },
-  { key: "maxBid", label: "Maximalgebot", money: true, highlight: true, render: (r) => eur(r.maxBid) },
+  {
+    key: "cash",
+    label: "Kontostand",
+    money: true,
+    info: "Dein Konto exakt aus Kickbase. Bei Gegnern rekonstruiert: Start-Budget − Käufe + Verkäufe + geschätzter Login-Bonus.",
+    render: (r) => eur(r.cash),
+  },
+  {
+    key: "loginBonus",
+    label: "Login-Bonus",
+    money: true,
+    info: "Geschätzter täglicher Login-Bonus, aufsummiert ab Reset (10.000 €, +10.000/Tag, max. 100.000/Tag). Annahme: täglich aktiv. Fließt in Konto & Max-Gebot der Gegner ein.",
+    render: (r) => eur(r.loginBonus),
+  },
+  {
+    key: "maxBid",
+    label: "Maximalgebot",
+    money: true,
+    highlight: true,
+    info: "Höchstes Gebot: Konto + 33 % × (Kaderwert + min(Konto, 0)) — die Kickbase-Regel.",
+    render: (r) => eur(r.maxBid),
+  },
   {
     key: "liquidity",
     label: "Liquidität",
     money: true,
+    info: "Anteil flüssiges Geld am Gesamtwert (Konto ÷ (Konto + Kaderwert)). Niedrig = viel Wert im Kader gebunden.",
     render: (r) => (r.liquidity != null ? pct(r.liquidity) : "—"),
   },
-  { key: "total", label: "Gesamt", money: true, render: (r) => eur(r.total) },
+  {
+    key: "total",
+    label: "Gesamt",
+    money: true,
+    info: "Gesamtwert = Kontostand + Kaderwert.",
+    render: (r) => eur(r.total),
+  },
 ];
 
 function initials(name: string): string {
@@ -105,9 +137,12 @@ export default function ManagerTable({
             <th className="l" />
             <th className="l">Manager</th>
             {cols.map((c) => (
-              <th key={c.key} data-sk={c.key} onClick={() => clickSort(c.key)}>
-                {c.label}
-                {arrow(c.key)}
+              <th key={c.key} data-sk={c.key}>
+                <span onClick={() => clickSort(c.key)} style={{ cursor: "pointer" }}>
+                  {c.label}
+                  {arrow(c.key)}
+                </span>
+                {c.info && <InfoDot text={c.info} align="right" />}
               </th>
             ))}
           </tr>

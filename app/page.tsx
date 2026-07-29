@@ -6,12 +6,12 @@ import {
   getMarket,
   getSquadLandscape,
   getMyAccess,
-  getBonusCheck,
   type ManagerTableRow,
 } from "../lib/db/queries";
 import { computeBidAdvice } from "../lib/compute/bidadvisor";
 import { eur, eurFull, eurSigned, num, pct } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
+import InfoDot from "../components/InfoDot";
 import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
 import DashboardFavorites from "../components/DashboardFavorites";
@@ -62,11 +62,10 @@ export default async function DashboardPage({
   }
 
   const { day, rows } = await getManagerTable(league);
-  const [calibration, marketListings, landscape, bonusCheck] = await Promise.all([
+  const [calibration, marketListings, landscape] = await Promise.all([
     getCalibration(league),
     getMarket(league),
     getSquadLandscape(league),
-    getBonusCheck(league),
   ]);
   // Konto/Maximalgebot sind rekonstruierbar, sobald eine Budget-Basis (Start-
   // Budget) konfiguriert ist. Gerechnet wird ab dem Startzeitpunkt (siehe
@@ -178,37 +177,37 @@ export default async function DashboardPage({
         </div>
       )}
 
-      {bonusCheck && (
-        <div className={`notice ${bonusCheck.overestimated ? "warn" : ""}`}>
-          <b>Prämien-Check</b> (nur du): exakt {eur(bonusCheck.exactCash)} · real erzielte Prämien{" "}
-          <strong>{eur(bonusCheck.realizedPrizes)}</strong> · davon Login-Bonus geschätzt{" "}
-          <strong>{eur(bonusCheck.predictedLoginBonus)}</strong> · Rest (Spieltag/Sonstiges) ≈{" "}
-          {eur(bonusCheck.otherPrizes)}.
-          {bonusCheck.overestimated
-            ? " ⚠ Login-Schätzung liegt über den real erzielten Prämien — Reset-Datum/Modell prüfen."
-            : ""}
-        </div>
-      )}
-
       <div className="tiles4" style={{ marginBottom: 24 }}>
         <div className="card card-pad tile">
-          <div className="label">Kaderwert-Spitze</div>
+          <div className="label">
+            Kaderwert-Spitze
+            <InfoDot text="Höchster Kaderwert (Summe der Marktwerte aller Kaderspieler) in der Liga — direkt aus Kickbase." />
+          </div>
           <div className="value sm">{eur(leaderTv?.teamValue ?? null)}</div>
           <div className="hint">{leaderTv?.name ?? "—"}</div>
         </div>
         <div className="card card-pad tile">
-          <div className="label">Punkte-Spitze</div>
+          <div className="label">
+            Punkte-Spitze
+            <InfoDot text="Meiste Saisonpunkte in der Liga — direkt aus dem Kickbase-Ranking." />
+          </div>
           <div className="value sm">{num(leaderPts?.points ?? null)}</div>
           <div className="hint">{leaderPts?.name ?? "—"}</div>
         </div>
         <div className="card card-pad tile">
-          <div className="label">Ø Kaderwert (aktiv)</div>
+          <div className="label">
+            Ø Kaderwert (aktiv)
+            <InfoDot text="Durchschnittlicher Kaderwert über alle aktiven Manager." />
+          </div>
           <div className="value sm">{eur(avgTv)}</div>
           <div className="hint">über {active.length} Manager</div>
         </div>
         {showMoney && (
           <div className="card card-pad tile">
-            <div className="label">Dein Konto{me?.cashExact ? "" : " (rekonstruiert)"}</div>
+            <div className="label">
+              Dein Konto{me?.cashExact ? "" : " (rekonstruiert)"}
+              <InfoDot text="Dein exakter Kontostand aus Kickbase (/me/budget). Max-Gebot = Konto + 33 % × Kaderwert." />
+            </div>
             <div className="value sm">{eurFull(me?.cash ?? null)}</div>
             <div className="hint">
               {me?.cashExact ? "exakt aus /me/budget" : "rekonstruiert"}
@@ -227,7 +226,10 @@ export default async function DashboardPage({
         <DashboardFavorites listings={marketListings} leagueId={league.id} />
         <div className="panel">
           <div className="panel-head">
-            <h3>Marktchancen · Bid-Advisor</h3>
+            <h3>
+              Marktchancen · Bid-Advisor
+              <InfoDot text={'Vergleicht das Mindestgebot jedes Marktspielers mit dem stärksten Max-Gebot deiner Gegner. „Freie Bahn" = kein Gegner kann mitbieten; sonst steht dort, wie hoch du mindestens bieten musst (≥), um den stärksten Gegner zu überbieten.'} />
+            </h3>
             {showMoney && <span className="count">{opportunities.length}</span>}
           </div>
           <div>
@@ -268,7 +270,10 @@ export default async function DashboardPage({
 
       <div className="section">
         <div className="section-head">
-          <h2>Alle Manager</h2>
+          <h2>
+            Alle Manager
+            <InfoDot text="Alle Manager der Liga. Kaderwert, Punkte, Spieler & Aktivität kommen direkt aus Kickbase. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Spaltenköpfe haben eigene Erklärungen." />
+          </h2>
           <span className="note">Spaltenkopf klicken zum Sortieren</span>
         </div>
         <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
@@ -282,14 +287,22 @@ export default async function DashboardPage({
       {(verkaufsdruck.length > 0 || schlaefer.length > 0) && (
         <div className="tiles4">
           {verkaufsdruck.length > 0 && (
-            <InsightTile title="Verkaufsdruck" sub="niedrigste Liquidität">
+            <InsightTile
+              title="Verkaufsdruck"
+              sub="niedrigste Liquidität"
+              info="Gegner mit dem geringsten Anteil flüssigen Geldes (Konto ÷ Gesamtwert). Sie haben viel im Kader gebunden und müssen für Zukäufe eher verkaufen."
+            >
               {verkaufsdruck.map((r) => (
                 <Trow key={r.id} name={r.name} detail={`${pct(r.liquidity)} liquide · ${eur(r.cash)}`} />
               ))}
             </InsightTile>
           )}
           {schlaefer.length > 0 && (
-            <InsightTile title="Schläfer" sub="längste Transfer-Pause">
+            <InsightTile
+              title="Schläfer"
+              sub="längste Transfer-Pause"
+              info="Gegner, deren letzter Transfer am längsten zurückliegt — vermutlich gerade inaktiv und langsamer am Markt."
+            >
               {schlaefer.map((r) => (
                 <Trow
                   key={r.id}
@@ -317,16 +330,21 @@ export default async function DashboardPage({
 function InsightTile({
   title,
   sub,
+  info,
   children,
 }: {
   title: string;
   sub: string;
+  info?: string;
   children: ReactNode;
 }) {
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>{title}</h3>
+        <h3>
+          {title}
+          {info && <InfoDot text={info} />}
+        </h3>
         <span className="count">{sub}</span>
       </div>
       <div>{children}</div>

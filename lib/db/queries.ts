@@ -53,6 +53,8 @@ export interface ManagerTableRow {
   transferCount: number;
   /** Punkte je Spieltag (Formkurve) — null/[] wenn noch nicht erfasst. */
   pointsSeries: (number | null)[] | null;
+  /** Geschätzter kumulierter Login-Bonus ab Reset (null = kein Reset-Anker). */
+  loginBonus: number | null;
   active: boolean;
 }
 
@@ -288,6 +290,7 @@ export async function getManagerTable(
       lastActiveDays,
       transferCount: myTransfers?.length ?? 0,
       pointsSeries: (s.points_series as (number | null)[]) ?? null,
+      loginBonus: league.trackingSince ? loginBonus : null,
       active: teamValue != null || (s.points as number) != null,
     };
   });
@@ -803,56 +806,6 @@ export async function getPlayerMarketValueCurve(
   } catch {
     return null;
   }
-}
-
-// ---------- Login-Bonus-Selbstvalidierung ----------
-
-export interface BonusCheck {
-  /** Dein exakter Kontostand (user_budget). */
-  exactCash: number;
-  /** Rekonstruktion OHNE Prämien (Startbudget − Käufe + Verkäufe). */
-  reconWithoutBonus: number;
-  /** Modell-Schätzung des kumulierten Login-Bonus (täglich aktiv). */
-  predictedLoginBonus: number;
-  /** Real erzielte Prämien gesamt = exakt − Rekonstruktion (Login + Spieltag + …). */
-  realizedPrizes: number;
-  /** Rest nach Abzug des geschätzten Login-Bonus (≈ Spieltag/Sonstiges). */
-  otherPrizes: number;
-  /** true, wenn die Login-Schätzung die real erzielten Prämien übersteigt. */
-  overestimated: boolean;
-}
-
-/**
- * Selbstvalidierung des Login-Bonus-Modells am EIGENEN (exakten) Konto: Der
- * geschätzte Login-Bonus muss ≤ den real erzielten Gesamtprämien sein
- * (exakt − Rekonstruktion). Nur für den eingeloggten Nutzer, mit Reset-Anker.
- */
-export async function getBonusCheck(league: LeagueLite): Promise<BonusCheck | null> {
-  if (league.startBudget <= 0 || !league.trackingSince) return null;
-  const access = await getMyAccess();
-  if (!access) return null;
-  const day = await getLatestDay(league.id);
-  if (day == null) return null;
-  const budget = await getMyBudget(league.id);
-  const exactCash = budget.get(day);
-  if (exactCash == null) return null;
-
-  const transfers = await getTransfersByManager(league.id);
-  const sinceMs = Date.parse(league.trackingSince);
-  const mine = (transfers.get(access.kbManagerId) ?? []).filter(
-    (t) => t.ts != null && Date.parse(t.ts) >= sinceMs,
-  );
-  const reconWithoutBonus = reconstructCash(mine, { startBudget: league.startBudget });
-  const predictedLoginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
-  const realizedPrizes = exactCash - reconWithoutBonus;
-  return {
-    exactCash,
-    reconWithoutBonus,
-    predictedLoginBonus,
-    realizedPrizes,
-    otherPrizes: realizedPrizes - predictedLoginBonus,
-    overestimated: predictedLoginBonus > realizedPrizes,
-  };
 }
 
 // ---------- §8: Kalibrierung ----------

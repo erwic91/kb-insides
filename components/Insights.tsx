@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ManagerTableRow, SquadLandscape } from "../lib/db/queries";
 import { eur, eurFull, num, pct } from "../lib/format";
+import InfoDot from "./InfoDot";
 
 /**
  * Dashboard-Einblicke (Server-Komponenten, keine Interaktivität):
@@ -54,7 +55,10 @@ export function MeinStanding({
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>Mein Standing</h3>
+        <h3>
+          Mein Standing
+          <InfoDot text="Dein Rang und die Abstände nach oben, nach unten und zum Führenden — in Budget-Ligen nach Gesamtwert (Konto + Kaderwert), sonst nach Punkten. Dazu dein Rang beim Maximalgebot und bei der Liquidität." />
+        </h3>
         <span className="count">
           Rang {myRank} / {active.length}
         </span>
@@ -137,7 +141,10 @@ export function BedrohungsRadar({
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>Bedrohungs-Radar</h3>
+        <h3>
+          Bedrohungs-Radar
+          <InfoDot text="Deine Gegner nach Maximalgebot sortiert (Konto + 33 % × Kaderwert). Das ▲ markiert alle, die höher bieten können als du — die dich also bei einem Spieler überbieten könnten. Gegner-Konten sind rekonstruiert (inkl. geschätztem Login-Bonus)." />
+        </h3>
         <span className="count">
           {stronger != null ? `${stronger} über dir` : `${rivals.length} Gegner`}
         </span>
@@ -190,7 +197,10 @@ export function SpielerLandschaft({
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>Spieler-Landschaft</h3>
+        <h3>
+          Spieler-Landschaft
+          <InfoDot text={`Wie sich die punktbesten Spieler der Liga (Top ${topN}) auf die Manager verteilen — wer die meisten Top-Spieler hält. Darunter deine eigenen wertvollsten/punktbesten Spieler.`} />
+        </h3>
         <span className="count">Top {topN}</span>
       </div>
       <div className="card-pad">
@@ -322,7 +332,10 @@ export function Formkurve({
   return (
     <div className="panel">
       <div className="panel-head">
-        <h3>Formkurve</h3>
+        <h3>
+          Formkurve
+          <InfoDot text="Punkte je Spieltag pro Manager als Mini-Verlauf — zeigt, wer gerade in Form ist. Sortiert nach Saisonpunkten, dein eigener Verlauf ist hervorgehoben. Der Wert rechts ist der jüngste Spieltag." />
+        </h3>
         <span className="count">Punkte je Spieltag</span>
       </div>
       <div>

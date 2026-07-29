@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { MarketListing } from "../lib/db/queries";
-import { eur, date } from "../lib/format";
+import { date } from "../lib/format";
+import InfoDot from "./InfoDot";
+
+const FAV_INFO =
+  "Deine im Marktradar mit ★ gemerkten Spieler, die gerade am Markt sind — mit Ablaufdatum des Angebots. Merken/Entfernen im Marktradar.";
 
 const FAV_KEY = "kbinsides:favorites";
 
@@ -38,7 +42,10 @@ export default function DashboardFavorites({
     return (
       <div className="panel">
         <div className="panel-head">
-          <h3>Marktradar · deine Favoriten</h3>
+          <h3>
+            Marktradar · deine Favoriten
+            <InfoDot text={FAV_INFO} />
+          </h3>
           <Link href={href("/markt")} className="more">
             alle →
           </Link>
