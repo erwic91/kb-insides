@@ -4,8 +4,6 @@ import { useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { eur } from "../lib/format";
 
-const KEY_STORAGE = "kbinsides:collectKey";
-
 function nowLocalInput(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
@@ -34,7 +32,8 @@ export interface LeagueSettingsValues {
 /**
  * Per-Liga-Einstellungen: Liga-Typ (200 Mio/Nullspieler vs. 50 Mio/zugeloste
  * Spieler), Start-Zeitpunkt, Start-Budget, Historie ein/aus, Bonusmodell.
- * Speichert über /api/league/settings; CRON_SECRET nur lokal (localStorage).
+ * Speichert über /api/league/settings — per Session authentifiziert (jedes
+ * verbundene Mitglied der Liga darf ändern).
  */
 export default function LeagueSettings({
   leagueId,
@@ -64,29 +63,13 @@ export default function LeagueSettings({
   }
 
   async function save() {
-    let key: string | null = null;
-    try {
-      key = localStorage.getItem(KEY_STORAGE);
-    } catch {
-      /* ignore */
-    }
-    if (!key) {
-      key = typeof window !== "undefined" ? window.prompt("CRON_SECRET eingeben") : null;
-      if (!key) return;
-      try {
-        localStorage.setItem(KEY_STORAGE, key);
-      } catch {
-        /* ignore */
-      }
-    }
-
     setBusy(true);
     setMsg("Speichere …");
     try {
       const trackingSince = useStart && since ? new Date(since).toISOString() : null;
       const res = await fetch(`/api/league/settings?league=${encodeURIComponent(leagueId)}`, {
         method: "POST",
-        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           gameMode,
           startBudget: Math.round(Number(budgetMio) * 1e6),
@@ -95,14 +78,8 @@ export default function LeagueSettings({
           bonusMode,
         }),
       });
-      if (res.status === 401) {
-        try {
-          localStorage.removeItem(KEY_STORAGE);
-        } catch {
-          /* ignore */
-        }
-        throw new Error("Schlüssel abgelehnt — bitte erneut versuchen.");
-      }
+      if (res.status === 401) throw new Error("Nicht angemeldet — bitte neu einloggen.");
+      if (res.status === 403) throw new Error("Keine Berechtigung für diese Liga.");
       const data = (await res.json()) as { ok?: boolean; error?: string; deletedTransfers?: number };
       if (!res.ok || !data.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       setMsg(

@@ -269,6 +269,18 @@ export async function getCollectionTargets(): Promise<CollectionTarget[]> {
   return targets;
 }
 
+/** Hat der Nutzer Zugriff auf diese Liga (league_access)? */
+export async function userHasLeagueAccess(userId: string, leagueId: string): Promise<boolean> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("league_access")
+    .select("league_id")
+    .eq("user_id", userId)
+    .eq("league_id", leagueId)
+    .maybeSingle();
+  return data != null;
+}
+
 /** Schreibt den nutzer-privaten exakten Kontostand (aus /me/budget). */
 export async function upsertUserBudget(
   userId: string,

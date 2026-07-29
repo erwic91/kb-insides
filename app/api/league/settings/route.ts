@@ -4,6 +4,8 @@ import {
   deleteTransfersBefore,
   type LeagueSettingsInput,
 } from "../../../../lib/db/ingest";
+import { getCurrentUser } from "../../../../lib/supabase/server";
+import { userHasLeagueAccess } from "../../../../lib/db/connections";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,20 +16,18 @@ export const dynamic = "force-dynamic";
  *   body: { gameMode?, startBudget?, trackingSince?, includeHistory?, bonusMode? }
  * Wird historische Historie ausgeschlossen (includeHistory=false) und ein
  * trackingSince gesetzt, werden Transfers davor gelöscht (saubere Basis).
- * Schutz via CRON_SECRET (Bearer).
+ * Auth: angemeldeter Nutzer (Session) MIT Zugriff auf diese Liga (league_access).
  */
-function isAuthorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  return request.headers.get("authorization") === `Bearer ${secret}`;
-}
-
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
   const league = new URL(request.url).searchParams.get("league");
   if (!league) return NextResponse.json({ error: "league fehlt" }, { status: 400 });
+
+  if (!(await userHasLeagueAccess(user.id, league))) {
+    return NextResponse.json({ error: "Keine Berechtigung für diese Liga" }, { status: 403 });
+  }
 
   let body: Record<string, unknown>;
   try {
