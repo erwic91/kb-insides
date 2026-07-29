@@ -33,11 +33,17 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const leagues = await getLeagues();
+  // Dieselbe Default-Auflösung wie resolveLeague (isDefault, sonst erste), damit
+  // der Liga-Switch ohne ?league-Param dieselbe Liga markiert, die angezeigt wird.
+  const defaultLeagueId = (leagues.find((l) => l.isDefault) ?? leagues[0])?.id ?? null;
   return (
     <html lang="de" className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <body>
         <Suspense fallback={<header className="topbar" />}>
-          <Topbar leagues={leagues.map((l) => ({ id: l.id, name: l.name }))} />
+          <Topbar
+            leagues={leagues.map((l) => ({ id: l.id, name: l.name }))}
+            defaultLeagueId={defaultLeagueId}
+          />
         </Suspense>
         {children}
       </body>

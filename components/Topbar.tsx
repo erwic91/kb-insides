@@ -14,12 +14,17 @@ const NAV = [
 
 export default function Topbar({
   leagues,
+  defaultLeagueId,
 }: {
   leagues: Pick<LeagueLite, "id" | "name">[];
+  /** Liga, die die Seite ohne ?league-Param anzeigt (= resolveLeague-Default). */
+  defaultLeagueId?: string | null;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
-  const league = params.get("league");
+  // Ohne Param dieselbe Liga wie die Seite (resolveLeague): sonst markiert der
+  // Switch eine andere Liga als die angezeigte.
+  const league = params.get("league") ?? defaultLeagueId ?? null;
   // Liga in Navigationslinks mitführen (Dashboard bleibt der Einstieg).
   const withLeague = (href: string) =>
     league && href !== "/" ? `${href}?league=${encodeURIComponent(league)}` : href;
