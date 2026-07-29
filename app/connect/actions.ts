@@ -7,6 +7,7 @@ import {
   storeConnection,
   getConnectionState,
   activateLeague,
+  deactivateLeague,
   disconnect,
 } from "../../lib/db/connections";
 
@@ -37,7 +38,7 @@ export async function connectKickbase(formData: FormData): Promise<void> {
   redirect("/connect?ok=connected");
 }
 
-/** Schritt 2: EINE Liga aktivieren (7-Tage-Wechselsperre greift hier). */
+/** Schritt 2: eine Liga aktivieren (hinzufügen bis zum Liga-Limit). */
 export async function selectLeague(formData: FormData): Promise<void> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -53,9 +54,24 @@ export async function selectLeague(formData: FormData): Promise<void> {
     kbManagerId: state!.kbUserId,
   });
   if (!decision.allowed) {
-    redirect(`/connect?error=cooldown&until=${encodeURIComponent(decision.availableAt)}`);
+    redirect(`/connect?error=atcap&max=${decision.maxLeagues}`);
   }
   redirect("/connect?ok=activated");
+}
+
+/** Eine aktive Liga entfernen (7-Tage-Sperre gegen Liga-Hopping). */
+export async function removeLeague(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const leagueId = String(formData.get("leagueId") ?? "").trim();
+  if (!leagueId) redirect("/connect?error=noleague");
+
+  const decision = await deactivateLeague(user!.id, leagueId);
+  if (!decision.allowed) {
+    redirect(`/connect?error=removecooldown&until=${encodeURIComponent(decision.availableAt)}`);
+  }
+  redirect("/connect?ok=removed");
 }
 
 /** Kickbase trennen (Sperr-Marker bleibt erhalten). */

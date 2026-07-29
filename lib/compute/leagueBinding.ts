@@ -8,6 +8,53 @@
 export const SWITCH_COOLDOWN_DAYS = 7;
 const DAY_MS = 86_400_000;
 
+// ---------- Multi-Liga (Premium): bis zum Limit hinzufügen ----------
+
+export interface AddLeagueState {
+  targetLeagueId: string;
+  /** Aktuell aktive Ligen des Nutzers (league_access). */
+  activeLeagueIds: string[];
+  /** Erlaubte Anzahl gleichzeitig aktiver Ligen (profiles.max_leagues). */
+  maxLeagues: number;
+}
+export type AddDecision =
+  | { allowed: true; kind: "present" | "added" }
+  | { allowed: false; kind: "atCap"; maxLeagues: number };
+
+/**
+ * Entscheidet, ob eine Liga aktiviert (hinzugefügt) werden darf:
+ *  - "present": bereits aktiv → erlaubt (No-op).
+ *  - "added": unter dem Limit → erlaubt.
+ *  - "atCap": Limit erreicht → abgelehnt (erst eine Liga entfernen).
+ */
+export function decideAddLeague(s: AddLeagueState): AddDecision {
+  if (s.activeLeagueIds.includes(s.targetLeagueId)) return { allowed: true, kind: "present" };
+  if (s.activeLeagueIds.length < Math.max(1, s.maxLeagues)) return { allowed: true, kind: "added" };
+  return { allowed: false, kind: "atCap", maxLeagues: s.maxLeagues };
+}
+
+export interface RemoveLeagueState {
+  /** Wann die zu entfernende Liga aktiviert wurde (ISO). */
+  activatedAt: string | null;
+  now: number;
+  cooldownDays?: number;
+}
+export type RemoveDecision = { allowed: true } | { allowed: false; availableAt: string };
+
+/**
+ * Entfernen einer aktiven Liga ist erst nach der 7-Tage-Sperre erlaubt
+ * (verhindert Liga-Hopping: hinzufügen → scrapen → entfernen → nächste).
+ */
+export function decideRemoveLeague(s: RemoveLeagueState): RemoveDecision {
+  const cd = s.cooldownDays ?? SWITCH_COOLDOWN_DAYS;
+  if (!s.activatedAt) return { allowed: true };
+  const until = Date.parse(s.activatedAt) + cd * DAY_MS;
+  if (Number.isFinite(until) && s.now < until) {
+    return { allowed: false, availableAt: new Date(until).toISOString() };
+  }
+  return { allowed: true };
+}
+
 export type ActivationDecision =
   | { allowed: true; kind: "first" | "same" | "switch" }
   | { allowed: false; kind: "cooldown"; availableAt: string };

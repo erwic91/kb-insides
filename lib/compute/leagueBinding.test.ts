@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { decideActivation, SWITCH_COOLDOWN_DAYS } from "./leagueBinding";
+import {
+  decideActivation,
+  decideAddLeague,
+  decideRemoveLeague,
+  SWITCH_COOLDOWN_DAYS,
+} from "./leagueBinding";
 
 const T0 = Date.parse("2026-07-01T12:00:00Z");
 const DAY = 86_400_000;
@@ -75,5 +80,47 @@ describe("decideActivation (eine Liga + 7-Tage-Wechselsperre)", () => {
       now: T0 + 2 * DAY,
     });
     expect(d.allowed).toBe(false);
+  });
+});
+
+describe("decideAddLeague (Premium/Multi-Liga)", () => {
+  it("bereits aktiv → present", () => {
+    expect(decideAddLeague({ targetLeagueId: "A", activeLeagueIds: ["A"], maxLeagues: 3 })).toEqual({
+      allowed: true,
+      kind: "present",
+    });
+  });
+  it("unter dem Limit → added", () => {
+    expect(decideAddLeague({ targetLeagueId: "B", activeLeagueIds: ["A"], maxLeagues: 3 })).toEqual({
+      allowed: true,
+      kind: "added",
+    });
+  });
+  it("Limit erreicht → atCap", () => {
+    const d = decideAddLeague({ targetLeagueId: "C", activeLeagueIds: ["A", "B"], maxLeagues: 2 });
+    expect(d.allowed).toBe(false);
+    if (!d.allowed) expect(d.kind).toBe("atCap");
+  });
+  it("Free (Limit 1): zweite Liga → atCap", () => {
+    const d = decideAddLeague({ targetLeagueId: "B", activeLeagueIds: ["A"], maxLeagues: 1 });
+    expect(d.allowed).toBe(false);
+  });
+});
+
+describe("decideRemoveLeague (7-Tage-Sperre fürs Entfernen)", () => {
+  it("vor Ablauf → gesperrt mit availableAt", () => {
+    const d = decideRemoveLeague({ activatedAt: new Date(T0).toISOString(), now: T0 + 2 * DAY });
+    expect(d.allowed).toBe(false);
+    if (!d.allowed) expect(d.availableAt).toBe(new Date(T0 + SWITCH_COOLDOWN_DAYS * DAY).toISOString());
+  });
+  it("nach Ablauf → erlaubt", () => {
+    const d = decideRemoveLeague({
+      activatedAt: new Date(T0).toISOString(),
+      now: T0 + SWITCH_COOLDOWN_DAYS * DAY,
+    });
+    expect(d.allowed).toBe(true);
+  });
+  it("ohne Zeitstempel → erlaubt", () => {
+    expect(decideRemoveLeague({ activatedAt: null, now: T0 }).allowed).toBe(true);
   });
 });

@@ -1,6 +1,11 @@
 import { getServiceClient } from "./client";
 import { seal, open } from "../security/crypto";
-import { decideActivation, type ActivationDecision } from "../compute/leagueBinding";
+import {
+  decideAddLeague,
+  decideRemoveLeague,
+  type AddDecision,
+  type RemoveDecision,
+} from "../compute/leagueBinding";
 import type { KbTokens } from "../kickbase/auth";
 
 /**
@@ -116,99 +121,152 @@ export async function getConnectionState(userId: string): Promise<ConnectionStat
   };
 }
 
-interface SwitchLock {
-  lastLeagueId: string | null;
+export interface UserLeague {
+  leagueId: string;
   activatedAt: string | null;
 }
 
-async function getSwitchLock(userId: string): Promise<SwitchLock> {
+/** Aktive Ligen eines Nutzers (league_access). */
+export async function getUserLeagues(userId: string): Promise<UserLeague[]> {
   const supabase = getServiceClient();
   const { data } = await supabase
-    .from("league_switch_lock")
-    .select("last_league_id, activated_at")
+    .from("league_access")
+    .select("league_id, activated_at")
+    .eq("user_id", userId)
+    .order("activated_at", { ascending: true });
+  return (data ?? []).map((r) => ({
+    leagueId: r.league_id as string,
+    activatedAt: (r.activated_at as string) ?? null,
+  }));
+}
+
+/** Liga-Limit des Nutzers (profiles.max_leagues; Standard 1 = free). */
+export async function getMaxLeagues(userId: string): Promise<number> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("max_leagues")
     .eq("user_id", userId)
     .maybeSingle();
-  return {
-    lastLeagueId: (data?.last_league_id as string) ?? null,
-    activatedAt: (data?.activated_at as string) ?? null,
-  };
+  const n = data?.max_leagues as number | undefined;
+  return n && n > 0 ? n : 1;
 }
 
 /**
- * Aktiviert `leagueId` für den Nutzer, sofern die 7-Tage-Wechselsperre es
- * zulässt. Bei Erlaubnis: kb_connections.active_league_id/league_activated_at
- * setzen, league_access (genau eine Zeile) ersetzen und league_switch_lock
- * fortschreiben. Gibt die Entscheidung zurück (auch die Ablehnung).
+ * Aktiviert (fügt hinzu) `leagueId` für den Nutzer — bis zum Liga-Limit.
+ * Bereits aktiv → No-op. Limit erreicht → Ablehnung (erst eine Liga entfernen).
+ * Setzt zusätzlich kb_connections.active_league_id auf die zuletzt aktivierte
+ * Liga (Kompatibilität/„primäre" Liga).
  */
 export async function activateLeague(
   userId: string,
   args: { leagueId: string; kbManagerId: string; now?: number },
-): Promise<ActivationDecision> {
+): Promise<AddDecision> {
   const supabase = getServiceClient();
   const now = args.now ?? Date.now();
+  const nowIso = new Date(now).toISOString();
 
-  const [state, lock] = await Promise.all([getConnectionState(userId), getSwitchLock(userId)]);
-  const decision = decideActivation({
+  const [leagues, maxLeagues] = await Promise.all([
+    getUserLeagues(userId),
+    getMaxLeagues(userId),
+  ]);
+  const decision = decideAddLeague({
     targetLeagueId: args.leagueId,
-    currentLeagueId: state?.activeLeagueId ?? null,
-    lockLeagueId: lock.lastLeagueId,
-    lockActivatedAt: lock.activatedAt,
-    now,
+    activeLeagueIds: leagues.map((l) => l.leagueId),
+    maxLeagues,
   });
   if (!decision.allowed) return decision;
+  if (decision.kind === "present") return decision; // schon aktiv → nichts tun
 
-  const nowIso = new Date(now).toISOString();
-  // Bei „same" (Reconnect derselben Liga) die ursprüngliche Frist NICHT
-  // zurücksetzen; nur bei first/switch neu stempeln.
-  const stamp = decision.kind === "same" ? (lock.activatedAt ?? nowIso) : nowIso;
-
-  const { error: connErr } = await supabase
-    .from("kb_connections")
-    .update({ active_league_id: args.leagueId, league_activated_at: stamp, updated_at: nowIso })
-    .eq("user_id", userId);
-  if (connErr) throw new Error(`Liga aktivieren fehlgeschlagen: ${connErr.message}`);
-
-  // league_access: genau eine Zeile je Nutzer → alte entfernen, neue setzen.
-  await supabase.from("league_access").delete().eq("user_id", userId);
-  const { error: accErr } = await supabase.from("league_access").insert({
-    user_id: userId,
-    league_id: args.leagueId,
-    kb_manager_id: args.kbManagerId,
-  });
+  const { error: accErr } = await supabase.from("league_access").upsert(
+    {
+      user_id: userId,
+      league_id: args.leagueId,
+      kb_manager_id: args.kbManagerId,
+      activated_at: nowIso,
+    },
+    { onConflict: "user_id,league_id" },
+  );
   if (accErr) throw new Error(`league_access setzen fehlgeschlagen: ${accErr.message}`);
 
-  const { error: lockErr } = await supabase.from("league_switch_lock").upsert(
-    { user_id: userId, last_league_id: args.leagueId, activated_at: stamp },
-    { onConflict: "user_id" },
-  );
-  if (lockErr) throw new Error(`Sperr-Marker setzen fehlgeschlagen: ${lockErr.message}`);
+  await supabase
+    .from("kb_connections")
+    .update({ active_league_id: args.leagueId, league_activated_at: nowIso, updated_at: nowIso })
+    .eq("user_id", userId);
 
   return decision;
 }
 
-export interface ActiveConnection {
+/**
+ * Entfernt eine aktive Liga — erst nach der 7-Tage-Sperre (Anti-Hopping).
+ * Aktualisiert die „primäre" active_league_id auf eine verbleibende Liga.
+ */
+export async function deactivateLeague(
+  userId: string,
+  leagueId: string,
+  now: number = Date.now(),
+): Promise<RemoveDecision> {
+  const supabase = getServiceClient();
+  const leagues = await getUserLeagues(userId);
+  const target = leagues.find((l) => l.leagueId === leagueId);
+  if (!target) return { allowed: true }; // nicht aktiv → nichts zu tun
+
+  const decision = decideRemoveLeague({ activatedAt: target.activatedAt, now });
+  if (!decision.allowed) return decision;
+
+  const { error } = await supabase
+    .from("league_access")
+    .delete()
+    .eq("user_id", userId)
+    .eq("league_id", leagueId);
+  if (error) throw new Error(`Liga entfernen fehlgeschlagen: ${error.message}`);
+
+  // Primäre Liga aktualisieren (irgendeine verbleibende, sonst null).
+  const remaining = leagues.filter((l) => l.leagueId !== leagueId);
+  await supabase
+    .from("kb_connections")
+    .update({ active_league_id: remaining[0]?.leagueId ?? null, updated_at: new Date(now).toISOString() })
+    .eq("user_id", userId);
+
+  return decision;
+}
+
+export interface CollectionTarget {
   userId: string;
   kbUserId: string;
-  activeLeagueId: string;
+  leagueId: string;
 }
 
 /**
- * Alle aktiven Verbindungen MIT gesetzter aktiver Liga (für den Collector).
- * Service-Role — läuft ohne Nutzer-Session.
+ * Sammel-Ziele für den Collector: je (Nutzer, aktive Liga) ein Eintrag —
+ * aus league_access, verknüpft mit aktiven Verbindungen. Service-Role.
  */
-export async function getActiveConnections(): Promise<ActiveConnection[]> {
+export async function getCollectionTargets(): Promise<CollectionTarget[]> {
   const supabase = getServiceClient();
-  const { data, error } = await supabase
+  const { data: conns, error } = await supabase
     .from("kb_connections")
-    .select("user_id, kb_user_id, active_league_id")
-    .eq("status", "active")
-    .not("active_league_id", "is", null);
+    .select("user_id, kb_user_id")
+    .eq("status", "active");
   if (error) throw new Error(`Verbindungen laden fehlgeschlagen: ${error.message}`);
-  return (data ?? []).map((r) => ({
-    userId: r.user_id as string,
-    kbUserId: r.kb_user_id as string,
-    activeLeagueId: r.active_league_id as string,
-  }));
+  const byUser = new Map<string, string>();
+  for (const c of conns ?? []) byUser.set(c.user_id as string, c.kb_user_id as string);
+  if (byUser.size === 0) return [];
+
+  const { data: access } = await supabase
+    .from("league_access")
+    .select("user_id, league_id")
+    .in("user_id", [...byUser.keys()]);
+  const targets: CollectionTarget[] = [];
+  for (const a of access ?? []) {
+    const kbUserId = byUser.get(a.user_id as string);
+    if (!kbUserId) continue;
+    targets.push({
+      userId: a.user_id as string,
+      kbUserId,
+      leagueId: a.league_id as string,
+    });
+  }
+  return targets;
 }
 
 /** Schreibt den nutzer-privaten exakten Kontostand (aus /me/budget). */

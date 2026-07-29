@@ -32,8 +32,8 @@ import {
   type SquadPlayerRow,
 } from "../db/ingest";
 import {
-  getActiveConnections,
-  getConnectionState,
+  getCollectionTargets,
+  getUserLeagues,
   upsertUserBudget,
 } from "../db/connections";
 import type { PlayerRow } from "./market";
@@ -208,24 +208,33 @@ async function collectUserBudget(
 // ---------- Multi-User-Einstieg ----------
 
 export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
-  const connections = await getActiveConnections();
+  const targets = await getCollectionTargets();
 
   // Übergangsphase: keine Verbindungen → alter env-basierter Pfad.
-  if (connections.length === 0) return runCollectLegacy();
+  if (targets.length === 0) return runCollectLegacy();
+
+  // Token je Nutzer nur einmal beschaffen (mehrere Ligen teilen ein Token).
+  const userToken = new Map<string, string | null>();
+  const tokenFor = async (userId: string): Promise<string | null> => {
+    if (userToken.has(userId)) return userToken.get(userId)!;
+    let t: string | null = null;
+    try {
+      t = await ensureConnectionToken(userId);
+    } catch {
+      t = null; // ensureConnectionToken markiert needs_reconnect
+    }
+    userToken.set(userId, t);
+    return t;
+  };
 
   // Ligen deduplizieren: je Liga ein (erstes gesundes) Token.
   const leagueToken = new Map<string, string>();
   const budgetTasks: { userId: string; leagueId: string; token: string }[] = [];
-  for (const c of connections) {
-    let token: string;
-    try {
-      token = await ensureConnectionToken(c.userId);
-    } catch {
-      // ensureConnectionToken markiert bei Fehlschlag needs_reconnect.
-      continue;
-    }
-    if (!leagueToken.has(c.activeLeagueId)) leagueToken.set(c.activeLeagueId, token);
-    budgetTasks.push({ userId: c.userId, leagueId: c.activeLeagueId, token });
+  for (const t of targets) {
+    const token = await tokenFor(t.userId);
+    if (!token) continue;
+    if (!leagueToken.has(t.leagueId)) leagueToken.set(t.leagueId, token);
+    budgetTasks.push({ userId: t.userId, leagueId: t.leagueId, token });
   }
 
   const leagues: LeagueIngestResult[] = [];
@@ -237,7 +246,7 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     await politeDelay();
   }
 
-  // Pro Verbindung: exakter eigener Kontostand.
+  // Pro (Nutzer, Liga): exakter eigener Kontostand.
   for (const t of budgetTasks) {
     const day = leagueDay.get(t.leagueId);
     if (day == null) continue;
@@ -252,22 +261,36 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
   return { leagues };
 }
 
-/** Authentifizierter Refresh: aktive Liga EINES Nutzers + dessen Kontostand. */
-export async function runCollectForUser(userId: string): Promise<LeagueIngestResult> {
-  const state = await getConnectionState(userId);
-  if (!state || !state.activeLeagueId) {
-    return { leagueId: "", error: "Keine aktive Liga." };
-  }
+/**
+ * Authentifizierter Refresh EINES Nutzers. Ohne `leagueId` werden alle aktiven
+ * Ligen des Nutzers gesammelt, mit `leagueId` nur diese (sofern der Nutzer
+ * Zugriff hat) — je Liga inkl. exaktem Kontostand.
+ */
+export async function runCollectForUser(
+  userId: string,
+  leagueId?: string,
+): Promise<LeagueIngestResult[]> {
+  const leagues = await getUserLeagues(userId);
+  if (leagues.length === 0) return [{ leagueId: "", error: "Keine aktive Liga." }];
+
+  const targets = leagueId ? leagues.filter((l) => l.leagueId === leagueId) : leagues;
+  if (targets.length === 0) return [{ leagueId: leagueId ?? "", error: "Liga nicht aktiv." }];
+
   const token = await ensureConnectionToken(userId);
-  const result = await collectLeagueWide(state.activeLeagueId, token);
-  if (result.day != null) {
-    try {
-      await collectUserBudget(userId, state.activeLeagueId, token, result.day);
-    } catch {
-      // isolieren
+  const results: LeagueIngestResult[] = [];
+  for (const l of targets) {
+    const r = await collectLeagueWide(l.leagueId, token);
+    if (r.day != null) {
+      try {
+        await collectUserBudget(userId, l.leagueId, token, r.day);
+      } catch {
+        // isolieren
+      }
     }
+    results.push(r);
+    await politeDelay();
   }
-  return result;
+  return results;
 }
 
 /** Gezielter liga-weiter Lauf (CRON_SECRET-Pfad, env-Token, ohne Kontostand). */

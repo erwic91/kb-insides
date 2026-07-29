@@ -15,13 +15,15 @@ export default function RefreshButton({ leagueId }: { leagueId?: string }) {
   const router = useRouter();
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
-  void leagueId; // aktive Liga bestimmt der Server aus der Verbindung.
 
   async function run() {
     setStatus("running");
     setMessage("Sammle Ranking, Transfers und Markt …");
     try {
-      const res = await fetch("/api/me/refresh", { method: "POST" });
+      const url = leagueId
+        ? `/api/me/refresh?league=${encodeURIComponent(leagueId)}`
+        : "/api/me/refresh";
+      const res = await fetch(url, { method: "POST" });
       if (res.status === 401) {
         setStatus("error");
         setMessage("Nicht angemeldet — bitte neu einloggen.");
