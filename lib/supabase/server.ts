@@ -32,11 +32,19 @@ export async function createSupabaseServerClient() {
   );
 }
 
-/** Eingeloggten Nutzer bestimmen (oder null). */
+/**
+ * Eingeloggten Nutzer bestimmen (oder null). Fehlt die Auth-Konfiguration oder
+ * ist das Backend nicht erreichbar, wird `null` zurückgegeben statt zu werfen —
+ * so entstehen keine 500er auf Server-Seiten; die Seite zeigt den Login-Zustand.
+ */
 export async function getCurrentUser() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user;
+  try {
+    const supabase = await createSupabaseServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return user;
+  } catch {
+    return null;
+  }
 }

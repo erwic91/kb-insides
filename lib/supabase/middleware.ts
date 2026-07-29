@@ -14,10 +14,16 @@ function isPublicPath(path: string): boolean {
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // Ohne Auth-Konfiguration NICHT hart abbrechen (sonst 500 auf allen Routen,
+  // inkl. /login) — Request unverändert durchreichen. Der Betreiber muss
+  // NEXT_PUBLIC_SUPABASE_URL/-ANON_KEY setzen, damit der Login greift.
+  if (!supabaseUrl || !supabaseKey) return response;
+
+  try {
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -32,19 +38,23 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
           }
         },
       },
-    },
-  );
+    });
 
-  // Wichtig: getUser() aufrufen, damit Supabase den Token ggf. erneuert.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    // Wichtig: getUser() aufrufen, damit Supabase den Token ggf. erneuert.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (!user && !isPublicPath(request.nextUrl.pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    if (!user && !isPublicPath(request.nextUrl.pathname)) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      return NextResponse.redirect(url);
+    }
+
+    return response;
+  } catch {
+    // Auth-Backend nicht erreichbar/fehlkonfiguriert → durchreichen statt 500.
+    // Die Daten bleiben durch RLS geschützt (leere Ergebnisse ohne Session).
+    return response;
   }
-
-  return response;
 }
