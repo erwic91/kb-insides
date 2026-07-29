@@ -3,6 +3,7 @@ import {
   dailyLoginBonus,
   loginBonusTotal,
   loginBonusSinceReset,
+  activityAdjustedLoginBonus,
 } from "./loginBonus";
 
 const DAY = 86_400_000;
@@ -43,5 +44,33 @@ describe("loginBonusSinceReset", () => {
   });
   it("vor dem Reset → 0", () => {
     expect(loginBonusSinceReset(reset, Date.parse(reset) - DAY)).toBe(0);
+  });
+});
+
+describe("activityAdjustedLoginBonus", () => {
+  const reset = "2026-07-01T00:00:00Z";
+  const resetMs = Date.parse(reset);
+
+  it("kürzlich aktiv → voller Bonus", () => {
+    const now = resetMs + 40 * DAY;
+    const lastActivity = now - 2 * DAY; // vor 2 Tagen
+    expect(activityAdjustedLoginBonus({ resetIso: reset, nowMs: now, lastActivityMs: lastActivity })).toBe(
+      loginBonusSinceReset(reset, now),
+    );
+  });
+
+  it("keine Aktivitäts-Evidenz → voller Bonus (sichere Richtung)", () => {
+    const now = resetMs + 40 * DAY;
+    expect(activityAdjustedLoginBonus({ resetIso: reset, nowMs: now, lastActivityMs: null })).toBe(
+      loginBonusSinceReset(reset, now),
+    );
+  });
+
+  it("lange still nach früherer Aktivität → Bonus eingefroren bei letzter Aktivität + Kulanz", () => {
+    const now = resetMs + 60 * DAY;
+    const lastActivity = resetMs + 10 * DAY; // seit Tag 10 still (> 28 Tage Lücke)
+    const got = activityAdjustedLoginBonus({ resetIso: reset, nowMs: now, lastActivityMs: lastActivity });
+    expect(got).toBe(loginBonusSinceReset(reset, lastActivity + 3 * DAY));
+    expect(got).toBeLessThan(loginBonusSinceReset(reset, now));
   });
 });

@@ -1,6 +1,6 @@
 import { createSupabaseServerClient } from "../supabase/server";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
-import { loginBonusSinceReset } from "../compute/loginBonus";
+import { loginBonusSinceReset, activityAdjustedLoginBonus } from "../compute/loginBonus";
 import { computeBidAdvice, type BidAdvice } from "../compute/bidadvisor";
 import { START_BUDGET } from "../compute/constants";
 import type { Direction } from "../ingest/transfers";
@@ -224,9 +224,6 @@ export async function getManagerTable(
   const [myAccess, myBudget] = await Promise.all([getMyAccess(), getMyBudget(league.id)]);
   const myCashActual = myBudget.get(day) ?? null;
   const now = Date.now();
-  // Täglicher Login-Bonus (ab Reset/Tracking-Start, Annahme: täglich aktiv).
-  // Fließt als Prämie in die Gegner-Rekonstruktion; das eigene Konto bleibt exakt.
-  const loginBonus = loginBonusSinceReset(league.trackingSince, now);
   // Ab Startzeitpunkt rechnen: Kontostand/Aktivität nur aus Transfers seit dem
   // Tracking-Start (start_budget ist die Budget-Basis genau zu diesem Zeitpunkt).
   const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
@@ -244,35 +241,37 @@ export async function getManagerTable(
         ? allTransfers.filter((t) => t.ts != null && Date.parse(t.ts) >= sinceMs)
         : allTransfers;
 
+    // Jüngster Transfer → Aktivität + Bonus-Korrektur.
+    let latestTransferMs: number | null = null;
+    if (myTransfers) {
+      for (const t of myTransfers) {
+        const ms = t.ts ? Date.parse(t.ts) : NaN;
+        if (!Number.isNaN(ms) && (latestTransferMs == null || ms > latestTransferMs)) {
+          latestTransferMs = ms;
+        }
+      }
+    }
+    const lastActiveDays =
+      latestTransferMs != null ? Math.max(0, Math.floor((now - latestTransferMs) / 86_400_000)) : null;
+
     // Kontostand: für den EIGENEN Manager der exakte Wert aus /me/budget
-    // (user_budget, nutzer-privat), sonst Rekonstruktion aus Transfers (Näherung).
+    // (user_budget, nutzer-privat), sonst Rekonstruktion aus Transfers (Näherung)
+    // inkl. aktivitäts-korrigiertem Login-Bonus (nur Gegner).
     const cashActual = isMe ? myCashActual : null;
-    // Rekonstruktion, sobald eine Budget-Basis existiert — auch OHNE Transfers:
-    // dann exakt das Start-Budget (z. B. direkt nach einem Reset, wo alle bei
-    // 200 Mio stehen, bevor der erste Kauf läuft). Dieselbe Formel, leere Summe.
+    const bonus = activityAdjustedLoginBonus({
+      resetIso: league.trackingSince,
+      nowMs: now,
+      lastActivityMs: latestTransferMs,
+    });
     const reconstructed =
       league.startBudget > 0
-        ? reconstructCash(myTransfers ?? [], {
-            startBudget: league.startBudget,
-            prizes: loginBonus,
-          })
+        ? reconstructCash(myTransfers ?? [], { startBudget: league.startBudget, prizes: bonus })
         : null;
     const cash = cashActual ?? reconstructed;
     const cashExact = cashActual != null;
     const bid = cash != null && teamValue != null ? maxBid(cash, teamValue) : null;
     const total = cash != null && teamValue != null ? cash + teamValue : null;
     const liquidity = total != null && total > 0 && cash != null ? cash / total : null;
-
-    // Aktivität: Tage seit dem jüngsten Transfer (aus den vorhandenen Transfers).
-    let lastActiveDays: number | null = null;
-    if (myTransfers && myTransfers.length > 0) {
-      let latest = 0;
-      for (const t of myTransfers) {
-        const ms = t.ts ? Date.parse(t.ts) : NaN;
-        if (!Number.isNaN(ms) && ms > latest) latest = ms;
-      }
-      if (latest > 0) lastActiveDays = Math.max(0, Math.floor((now - latest) / 86_400_000));
-    }
 
     return {
       id: mid,
@@ -365,8 +364,13 @@ export async function getManagerDetail(
     .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
 
   // Eigener Manager: exakter Kontostand aus /me/budget, sonst Rekonstruktion
-  // (inkl. geschätztem Login-Bonus ab Reset). Auch ohne Transfers = Start-Budget.
-  const loginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
+  // (inkl. aktivitäts-korrigiertem Login-Bonus). Auch ohne Transfers = Start-Budget.
+  const lastActivityMs = transfers[0]?.ts ? Date.parse(transfers[0].ts) : null;
+  const loginBonus = activityAdjustedLoginBonus({
+    resetIso: league.trackingSince,
+    nowMs: Date.now(),
+    lastActivityMs,
+  });
   const reconstructed =
     league.startBudget > 0
       ? reconstructCash(transfers, { startBudget: league.startBudget, prizes: loginBonus })
@@ -805,6 +809,56 @@ export async function getPlayerMarketValueCurve(
   } catch {
     return null;
   }
+}
+
+// ---------- Login-Bonus-Selbstvalidierung ----------
+
+export interface BonusCheck {
+  /** Dein exakter Kontostand (user_budget). */
+  exactCash: number;
+  /** Rekonstruktion OHNE Prämien (Startbudget − Käufe + Verkäufe). */
+  reconWithoutBonus: number;
+  /** Modell-Schätzung des kumulierten Login-Bonus (täglich aktiv). */
+  predictedLoginBonus: number;
+  /** Real erzielte Prämien gesamt = exakt − Rekonstruktion (Login + Spieltag + …). */
+  realizedPrizes: number;
+  /** Rest nach Abzug des geschätzten Login-Bonus (≈ Spieltag/Sonstiges). */
+  otherPrizes: number;
+  /** true, wenn die Login-Schätzung die real erzielten Prämien übersteigt. */
+  overestimated: boolean;
+}
+
+/**
+ * Selbstvalidierung des Login-Bonus-Modells am EIGENEN (exakten) Konto: Der
+ * geschätzte Login-Bonus muss ≤ den real erzielten Gesamtprämien sein
+ * (exakt − Rekonstruktion). Nur für den eingeloggten Nutzer, mit Reset-Anker.
+ */
+export async function getBonusCheck(league: LeagueLite): Promise<BonusCheck | null> {
+  if (league.startBudget <= 0 || !league.trackingSince) return null;
+  const access = await getMyAccess();
+  if (!access) return null;
+  const day = await getLatestDay(league.id);
+  if (day == null) return null;
+  const budget = await getMyBudget(league.id);
+  const exactCash = budget.get(day);
+  if (exactCash == null) return null;
+
+  const transfers = await getTransfersByManager(league.id);
+  const sinceMs = Date.parse(league.trackingSince);
+  const mine = (transfers.get(access.kbManagerId) ?? []).filter(
+    (t) => t.ts != null && Date.parse(t.ts) >= sinceMs,
+  );
+  const reconWithoutBonus = reconstructCash(mine, { startBudget: league.startBudget });
+  const predictedLoginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
+  const realizedPrizes = exactCash - reconWithoutBonus;
+  return {
+    exactCash,
+    reconWithoutBonus,
+    predictedLoginBonus,
+    realizedPrizes,
+    otherPrizes: realizedPrizes - predictedLoginBonus,
+    overestimated: predictedLoginBonus > realizedPrizes,
+  };
 }
 
 // ---------- §8: Kalibrierung ----------

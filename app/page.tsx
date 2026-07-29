@@ -6,6 +6,7 @@ import {
   getMarket,
   getSquadLandscape,
   getMyAccess,
+  getBonusCheck,
   type ManagerTableRow,
 } from "../lib/db/queries";
 import { computeBidAdvice } from "../lib/compute/bidadvisor";
@@ -61,10 +62,11 @@ export default async function DashboardPage({
   }
 
   const { day, rows } = await getManagerTable(league);
-  const [calibration, marketListings, landscape] = await Promise.all([
+  const [calibration, marketListings, landscape, bonusCheck] = await Promise.all([
     getCalibration(league),
     getMarket(league),
     getSquadLandscape(league),
+    getBonusCheck(league),
   ]);
   // Konto/Maximalgebot sind rekonstruierbar, sobald eine Budget-Basis (Start-
   // Budget) konfiguriert ist. Gerechnet wird ab dem Startzeitpunkt (siehe
@@ -173,6 +175,18 @@ export default async function DashboardPage({
         <div className="note">
           Kontostand &amp; Maximalgebot werden ab dem Liga-Start
           ({new Date(league.trackingSince).toLocaleDateString("de-DE")}) gerechnet.
+        </div>
+      )}
+
+      {bonusCheck && (
+        <div className={`notice ${bonusCheck.overestimated ? "warn" : ""}`}>
+          <b>Prämien-Check</b> (nur du): exakt {eur(bonusCheck.exactCash)} · real erzielte Prämien{" "}
+          <strong>{eur(bonusCheck.realizedPrizes)}</strong> · davon Login-Bonus geschätzt{" "}
+          <strong>{eur(bonusCheck.predictedLoginBonus)}</strong> · Rest (Spieltag/Sonstiges) ≈{" "}
+          {eur(bonusCheck.otherPrizes)}.
+          {bonusCheck.overestimated
+            ? " ⚠ Login-Schätzung liegt über den real erzielten Prämien — Reset-Datum/Modell prüfen."
+            : ""}
         </div>
       )}
 
