@@ -50,36 +50,3 @@ export function loginBonusSinceReset(resetIso: string | null, nowMs: number): nu
   const days = Math.floor((nowMs - resetMs) / DAY_MS);
   return loginBonusTotal(days);
 }
-
-/** Ab wann eine Transfer-Stille als „inaktiv" gilt (Streak vermutlich gebrochen). */
-export const INACTIVE_THRESHOLD_DAYS = 28;
-/** Kulanztage nach der letzten Aktivität, bis der Bonus eingefroren wird. */
-export const ACTIVITY_GRACE_DAYS = 3;
-
-/**
- * Aktivitäts-korrigierter Login-Bonus. Standard: voller Bonus (Annahme täglich
- * aktiv). NUR wenn ein Manager NACH früherer Aktivität sehr lange (> Schwelle)
- * still ist, wird die Login-Streak als abgebrochen angenommen und der Bonus nur
- * bis kurz nach der letzten Aktivität angesetzt.
- *
- * Sichere Fehlerrichtung: ohne Aktivitäts-Evidenz (nie ein Transfer erfasst)
- * gibt es den VOLLEN Bonus — Gegner werden nie unterschätzt.
- */
-export function activityAdjustedLoginBonus(args: {
-  resetIso: string | null;
-  nowMs: number;
-  /** Zeitpunkt des jüngsten Transfers (ms) oder null (keine Transfers erfasst). */
-  lastActivityMs: number | null;
-  inactiveThresholdDays?: number;
-  graceDays?: number;
-}): number {
-  const { resetIso, nowMs, lastActivityMs } = args;
-  if (!resetIso) return 0;
-  const threshold = args.inactiveThresholdDays ?? INACTIVE_THRESHOLD_DAYS;
-  const grace = args.graceDays ?? ACTIVITY_GRACE_DAYS;
-
-  if (lastActivityMs == null) return loginBonusSinceReset(resetIso, nowMs);
-  const gapDays = (nowMs - lastActivityMs) / DAY_MS;
-  if (gapDays <= threshold) return loginBonusSinceReset(resetIso, nowMs);
-  return loginBonusSinceReset(resetIso, lastActivityMs + grace * DAY_MS);
-}
