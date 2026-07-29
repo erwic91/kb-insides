@@ -3,14 +3,29 @@
 import { useState } from "react";
 import { createSupabaseBrowserClient } from "../../lib/supabase/browser";
 
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [msg, setMsg] = useState<string>("");
+type Mode = "magic" | "password";
+type Status = "idle" | "working" | "sent" | "error";
 
-  async function sendLink(e: React.FormEvent) {
+const inputStyle = {
+  padding: "10px 12px",
+  border: "1px solid var(--line)",
+  borderRadius: 3,
+  fontFamily: "var(--body)",
+  fontSize: 14,
+} as const;
+
+export default function LoginPage() {
+  const [mode, setMode] = useState<Mode>("password");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState<Status>("idle");
+  const [msg, setMsg] = useState("");
+
+  const working = status === "working";
+
+  async function sendMagicLink(e: React.FormEvent) {
     e.preventDefault();
-    setStatus("sending");
+    setStatus("working");
     setMsg("");
     const supabase = createSupabaseBrowserClient();
     const emailRedirectTo = `${window.location.origin}/auth/confirm`;
@@ -23,49 +38,146 @@ export default function LoginPage() {
     }
   }
 
+  async function signIn(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus("working");
+    setMsg("");
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setStatus("error");
+      setMsg(error.message);
+      return;
+    }
+    // Volle Navigation, damit der Server die frischen Session-Cookies sieht.
+    window.location.assign("/connect");
+  }
+
+  async function signUp() {
+    setStatus("working");
+    setMsg("");
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) {
+      setStatus("error");
+      setMsg(error.message);
+      return;
+    }
+    if (data.session) {
+      window.location.assign("/connect");
+      return;
+    }
+    // Keine Session → E-Mail-Bestätigung ist aktiv.
+    setStatus("sent");
+    setMsg(
+      "Konto angelegt. Falls E-Mail-Bestätigung aktiv ist, bitte bestätigen — zum reinen Testen in Supabase unter Authentication → Providers → Email die Option Confirm email deaktivieren.",
+    );
+  }
+
   return (
     <main className="wrap">
       <div className="page-head">
         <span className="eyebrow">Anmeldung</span>
         <h1>Ligamonitor</h1>
-        <p className="sub">Melde dich per Magic-Link an — kein Passwort nötig.</p>
+        <p className="sub">
+          {mode === "magic"
+            ? "Anmeldung per Magic-Link — kein Passwort nötig."
+            : "Anmeldung mit E-Mail & Passwort (Testweg)."}
+        </p>
       </div>
 
       <div className="card card-pad" style={{ maxWidth: 460 }}>
-        {status === "sent" ? (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button
+            className="btn"
+            style={mode === "password" ? undefined : { opacity: 0.6 }}
+            onClick={() => {
+              setMode("password");
+              setStatus("idle");
+              setMsg("");
+            }}
+            type="button"
+          >
+            Passwort
+          </button>
+          <button
+            className="btn"
+            style={mode === "magic" ? undefined : { opacity: 0.6 }}
+            onClick={() => {
+              setMode("magic");
+              setStatus("idle");
+              setMsg("");
+            }}
+            type="button"
+          >
+            Magic-Link
+          </button>
+        </div>
+
+        {status === "sent" && mode === "magic" ? (
           <p className="note">
             Link verschickt an <strong>{email}</strong>. Öffne die E-Mail und klicke auf den
-            Anmelde-Link. Danach kannst du deinen Kickbase verbinden.
+            Anmelde-Link.
           </p>
-        ) : (
-          <form onSubmit={sendLink} style={{ display: "grid", gap: 12 }}>
-            <label className="label" htmlFor="email">
-              E-Mail-Adresse
-            </label>
+        ) : mode === "magic" ? (
+          <form onSubmit={sendMagicLink} style={{ display: "grid", gap: 12 }}>
             <input
-              id="email"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="du@example.com"
-              style={{
-                padding: "10px 12px",
-                border: "1px solid var(--line)",
-                borderRadius: 3,
-                fontFamily: "var(--body)",
-                fontSize: 14,
-              }}
+              style={inputStyle}
             />
-            <button className="btn" type="submit" disabled={status === "sending"}>
-              {status === "sending" ? "Sende…" : "Magic-Link senden"}
+            <button className="btn" type="submit" disabled={working}>
+              {working ? "Sende…" : "Magic-Link senden"}
             </button>
-            {status === "error" && (
-              <p className="note" style={{ color: "var(--loss)" }}>
-                {msg}
-              </p>
-            )}
           </form>
+        ) : (
+          <form onSubmit={signIn} style={{ display: "grid", gap: 12 }}>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="du@example.com"
+              style={inputStyle}
+            />
+            <input
+              type="password"
+              required
+              minLength={6}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Passwort (min. 6 Zeichen)"
+              style={inputStyle}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn" type="submit" disabled={working} style={{ flex: 1 }}>
+                {working ? "…" : "Anmelden"}
+              </button>
+              <button
+                className="btn"
+                type="button"
+                disabled={working}
+                onClick={() => void signUp()}
+                style={{ flex: 1, opacity: 0.85 }}
+              >
+                Registrieren
+              </button>
+            </div>
+          </form>
+        )}
+
+        {status === "error" && (
+          <p className="note" style={{ color: "var(--loss)", marginTop: 12 }}>
+            {msg}
+          </p>
+        )}
+        {status === "sent" && mode === "password" && (
+          <p className="note" style={{ marginTop: 12 }}>
+            {msg}
+          </p>
         )}
       </div>
     </main>
