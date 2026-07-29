@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createSupabaseBrowserClient } from "../../lib/supabase/browser";
 
 type Mode = "magic" | "password";
@@ -17,11 +17,29 @@ const inputStyle = {
 export default function LoginPage() {
   const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [msg, setMsg] = useState("");
+  const pwFormRef = useRef<HTMLFormElement>(null);
 
   const working = status === "working";
+
+  /**
+   * Liest E-Mail/Passwort DIREKT aus dem Formular (nicht aus React-State) — so
+   * greift auch Browser-Autofill, das oft kein onChange auslöst und sonst leere
+   * Werte an Supabase schickt (→ „Anonymous sign-ins are disabled").
+   */
+  function readCreds(): { email: string; password: string } | { error: string } {
+    const form = pwFormRef.current;
+    const email = String(
+      (form?.elements.namedItem("email") as HTMLInputElement | null)?.value ?? "",
+    ).trim();
+    const password = String(
+      (form?.elements.namedItem("password") as HTMLInputElement | null)?.value ?? "",
+    );
+    if (!email) return { error: "Bitte E-Mail eingeben." };
+    if (password.length < 6) return { error: "Passwort mit mindestens 6 Zeichen eingeben." };
+    return { email, password };
+  }
 
   async function sendMagicLink(e: React.FormEvent) {
     e.preventDefault();
@@ -40,10 +58,16 @@ export default function LoginPage() {
 
   async function signIn(e: React.FormEvent) {
     e.preventDefault();
+    const creds = readCreds();
+    if ("error" in creds) {
+      setStatus("error");
+      setMsg(creds.error);
+      return;
+    }
     setStatus("working");
     setMsg("");
     const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword(creds);
     if (error) {
       setStatus("error");
       setMsg(error.message);
@@ -54,10 +78,16 @@ export default function LoginPage() {
   }
 
   async function signUp() {
+    const creds = readCreds();
+    if ("error" in creds) {
+      setStatus("error");
+      setMsg(creds.error);
+      return;
+    }
     setStatus("working");
     setMsg("");
     const supabase = createSupabaseBrowserClient();
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await supabase.auth.signUp(creds);
     if (error) {
       setStatus("error");
       setMsg(error.message);
@@ -134,9 +164,11 @@ export default function LoginPage() {
             </button>
           </form>
         ) : (
-          <form onSubmit={signIn} style={{ display: "grid", gap: 12 }}>
+          <form ref={pwFormRef} onSubmit={signIn} style={{ display: "grid", gap: 12 }}>
             <input
               type="email"
+              name="email"
+              autoComplete="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -145,10 +177,10 @@ export default function LoginPage() {
             />
             <input
               type="password"
+              name="password"
+              autoComplete="current-password"
               required
               minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               placeholder="Passwort (min. 6 Zeichen)"
               style={inputStyle}
             />
