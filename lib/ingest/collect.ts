@@ -35,6 +35,7 @@ import {
   getCollectionTargets,
   getUserLeagues,
   upsertUserBudget,
+  reconcileLeagueAccess,
 } from "../db/connections";
 import type { PlayerRow } from "./market";
 
@@ -270,13 +271,27 @@ export async function runCollectForUser(
   userId: string,
   leagueId?: string,
 ): Promise<LeagueIngestResult[]> {
+  let token: string;
+  try {
+    token = await ensureConnectionToken(userId);
+  } catch {
+    return [{ leagueId: "", error: "Keine gültige Kickbase-Verbindung." }];
+  }
+
+  // Abgleich: in Kickbase verlassene Ligen aus league_access entfernen.
+  try {
+    const sel = await fetchLeaguesSelection({ token });
+    const selIds = parseLeaguesSelection(sel).map((l) => l.id);
+    if (selIds.length > 0) await reconcileLeagueAccess(userId, selIds);
+  } catch {
+    // best-effort — Abgleich darf den Sammel-Lauf nicht verhindern.
+  }
+
   const leagues = await getUserLeagues(userId);
   if (leagues.length === 0) return [{ leagueId: "", error: "Keine aktive Liga." }];
 
   const targets = leagueId ? leagues.filter((l) => l.leagueId === leagueId) : leagues;
   if (targets.length === 0) return [{ leagueId: leagueId ?? "", error: "Liga nicht aktiv." }];
-
-  const token = await ensureConnectionToken(userId);
   const results: LeagueIngestResult[] = [];
   for (const l of targets) {
     const r = await collectLeagueWide(l.leagueId, token);

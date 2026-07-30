@@ -5,6 +5,7 @@ import {
   getDecryptedTokens,
   getUserLeagues,
   getMaxLeagues,
+  reconcileLeagueAccess,
 } from "../../lib/db/connections";
 import { fetchLeaguesSelection } from "../../lib/kickbase/endpoints";
 import { parseLeaguesSelection } from "../../lib/ingest/leaguesSelection";
@@ -74,6 +75,12 @@ export default async function ConnectPage({
       if (tokens) {
         const sel = await fetchLeaguesSelection({ token: tokens.accessToken });
         leagues = parseLeaguesSelection(sel).map((l) => ({ id: l.id, name: l.name }));
+        // In Kickbase verlassene Ligen aus league_access entfernen (Abgleich).
+        // Nur bei nicht-leerer Auswahl (leere Liste = eher API-Hiccup als „alle verlassen").
+        if (leagues.length > 0) {
+          const removed = await reconcileLeagueAccess(user.id, leagues.map((l) => l.id));
+          if (removed.length > 0) userLeagues = await getUserLeagues(user.id);
+        }
       }
     } catch {
       loadError = true;

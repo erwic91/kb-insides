@@ -231,6 +231,41 @@ export async function deactivateLeague(
   return decision;
 }
 
+/**
+ * Gleicht die aktiven Ligen des Nutzers mit seiner aktuellen Kickbase-Auswahl
+ * (/selection) ab: Ligen, die er in Kickbase VERLASSEN hat, werden aus
+ * league_access entfernt (ohne 7-Tage-Sperre — externer Fakt, kein Hopping).
+ * Gibt die entfernten Liga-IDs zurück. Aktualisiert die „primäre" Liga.
+ */
+export async function reconcileLeagueAccess(
+  userId: string,
+  selectionLeagueIds: string[],
+): Promise<string[]> {
+  const supabase = getServiceClient();
+  const current = await getUserLeagues(userId);
+  const selSet = new Set(selectionLeagueIds);
+  const stale = current.filter((l) => !selSet.has(l.leagueId)).map((l) => l.leagueId);
+  if (stale.length === 0) return [];
+
+  const { error } = await supabase
+    .from("league_access")
+    .delete()
+    .eq("user_id", userId)
+    .in("league_id", stale);
+  if (error) throw new Error(`league_access abgleichen fehlgeschlagen: ${error.message}`);
+
+  // Primäre Liga korrigieren, falls sie entfernt wurde.
+  const state = await getConnectionState(userId);
+  if (state?.activeLeagueId && stale.includes(state.activeLeagueId)) {
+    const remaining = current.find((l) => selSet.has(l.leagueId))?.leagueId ?? null;
+    await supabase
+      .from("kb_connections")
+      .update({ active_league_id: remaining, updated_at: new Date().toISOString() })
+      .eq("user_id", userId);
+  }
+  return stale;
+}
+
 export interface CollectionTarget {
   userId: string;
   kbUserId: string;
