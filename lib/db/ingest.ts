@@ -86,6 +86,24 @@ export interface SquadPlayerRow {
   avg_points: number | null;
   market_value: number | null;
   position: string | null;
+  status: number | null;
+}
+
+/** Täglicher Kaderwert je Manager (kalendertäglich) — Basis für den TV-Trend. */
+export interface ManagerTvDailyRow {
+  league_id: string;
+  manager_id: string;
+  snap_date: string; // YYYY-MM-DD
+  team_value: number | null;
+}
+
+export async function upsertManagerTvDaily(rows: ManagerTvDailyRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  const supabase = getServiceClient();
+  const { error } = await supabase
+    .from("manager_tv_daily")
+    .upsert(rows, { onConflict: "league_id,manager_id,snap_date" });
+  if (error) throw new Error(`manager_tv_daily upsert fehlgeschlagen: ${error.message}`);
 }
 
 /** Ersetzt den Kaderbestand einer Liga (delete + insert) — keine Karteileichen. */

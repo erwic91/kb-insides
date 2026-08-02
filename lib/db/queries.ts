@@ -35,6 +35,8 @@ export interface ManagerTableRow {
   name: string;
   isMe: boolean;
   teamValue: number | null;
+  /** Kaderwert-Veränderung zum Vortag in % (0.05 = +5 %); null wenn unbekannt. */
+  teamValueDeltaPct: number | null;
   points: number | null;
   streak: number | null;
   squadSize: number | null;
@@ -96,6 +98,39 @@ export async function getMyAccess(): Promise<MyAccess | null> {
     .maybeSingle();
   if (!data) return null;
   return { leagueId: data.league_id as string, kbManagerId: data.kb_manager_id as string };
+}
+
+/**
+ * Kaderwert-Veränderung zum Vortag je Manager (in %). Aus manager_tv_daily:
+ * die zwei jüngsten Kalendertage vergleichen. Null, solange < 2 Tage vorliegen.
+ */
+async function getTeamValueDeltas(leagueId: string): Promise<Map<string, number>> {
+  const supabase = await getReadClient();
+  const out = new Map<string, number>();
+  if (!supabase) return out;
+  const { data } = await supabase
+    .from("manager_tv_daily")
+    .select("manager_id, snap_date, team_value")
+    .eq("league_id", leagueId)
+    .order("snap_date", { ascending: false });
+  if (!data || data.length === 0) return out;
+
+  // Je Manager die zwei jüngsten Werte (Daten sind absteigend sortiert).
+  const byMgr = new Map<string, { date: string; tv: number }[]>();
+  for (const r of data) {
+    const mid = r.manager_id as string;
+    const tv = r.team_value as number | null;
+    if (tv == null) continue;
+    const arr = byMgr.get(mid) ?? [];
+    if (arr.length < 2) arr.push({ date: r.snap_date as string, tv });
+    byMgr.set(mid, arr);
+  }
+  for (const [mid, arr] of byMgr) {
+    if (arr.length < 2) continue;
+    const [today, prev] = arr; // [0] jüngster, [1] Vortag
+    if (prev!.tv > 0) out.set(mid, (today!.tv - prev!.tv) / prev!.tv);
+  }
+  return out;
 }
 
 /** Eigener exakter Kontostand je Spieltag (aus user_budget; RLS = nur eigene). */
@@ -224,10 +259,11 @@ export async function getManagerTable(
   const transfers = await getTransfersByManager(league.id);
   // „Ich" + exakter Kontostand kommen jetzt pro Nutzer aus league_access /
   // user_budget (nicht mehr aus managers.is_me / snapshots.cash_actual).
-  const [myAccess, myBudget, adjustments] = await Promise.all([
+  const [myAccess, myBudget, adjustments, tvDeltas] = await Promise.all([
     getMyAccess(),
     getMyBudget(league.id),
     getAdjustmentSums(league.id),
+    getTeamValueDeltas(league.id),
   ]);
   const myCashActual = myBudget.get(day) ?? null;
   const now = Date.now();
@@ -287,6 +323,7 @@ export async function getManagerTable(
       name: mgr?.name ?? mid,
       isMe,
       teamValue,
+      teamValueDeltaPct: tvDeltas.get(mid) ?? null,
       points: (s.points as number) ?? null,
       streak: (s.streak as number) ?? null,
       squadSize: (s.squad_size as number) ?? null,
@@ -636,6 +673,93 @@ export async function getSquadLandscape(
   const myStars = meId ? (holders.get(meId)?.count ?? 0) : 0;
 
   return { starHolders, myAssets, myStars, topN, hasMe: meId != null };
+}
+
+export interface MySquadPlayer {
+  playerId: string;
+  name: string;
+  position: string | null;
+  team: string | null;
+  marketValue: number | null;
+  points: number | null;
+  avgPoints: number | null;
+  /** Status aus dem squad-Endpunkt: 0 = fit, >0 = angeschlagen/Ausfall. */
+  status: number | null;
+  /** Letzter Kaufpreis (aus Transfers) — null, wenn nicht erfasst. */
+  buyPrice: number | null;
+  /** Unrealisierter Transfergewinn = Marktwert − Kaufpreis. */
+  profit: number | null;
+}
+
+export interface MySquad {
+  managerId: string;
+  rows: MySquadPlayer[];
+  teamValue: number;
+  totalProfit: number;
+}
+
+/**
+ * Eigener Kader mit allen erfassten Infos (Marktwert, Punkte, Ø, Status) plus
+ * berechnetem Transfergewinn je Spieler (Marktwert − letzter Kaufpreis).
+ */
+export async function getMySquad(league: LeagueLite): Promise<MySquad | null> {
+  const supabase = await getReadClient();
+  if (!supabase) return null;
+  const access = await getMyAccess();
+  if (!access) return null;
+  const mid = access.kbManagerId;
+
+  const { data } = await supabase
+    .from("squad_players")
+    .select("player_id, points, avg_points, market_value, position, status")
+    .eq("league_id", league.id)
+    .eq("manager_id", mid)
+    .order("market_value", { ascending: false, nullsFirst: false });
+  if (!data || data.length === 0) return { managerId: mid, rows: [], teamValue: 0, totalProfit: 0 };
+
+  const pids = [...new Set(data.map((r) => r.player_id as string))];
+  const { data: pdata } = await supabase
+    .from("players")
+    .select("id, name, position, team")
+    .in("id", pids);
+  const pmap = new Map<string, { name?: string; position?: string; team?: string }>();
+  for (const p of pdata ?? [])
+    pmap.set(p.id as string, { name: p.name as string, position: p.position as string, team: p.team as string });
+
+  // Letzter Kaufpreis je Spieler aus den eigenen Transfers.
+  const transfers = await getTransfersByManager(league.id);
+  const mine = transfers.get(mid) ?? [];
+  const lastBuy = new Map<string, { ts: string | null; price: number }>();
+  for (const t of mine) {
+    if (t.direction !== "buy") continue;
+    const cur = lastBuy.get(t.playerId);
+    if (!cur || (t.ts ?? "") > (cur.ts ?? "")) lastBuy.set(t.playerId, { ts: t.ts, price: t.price });
+  }
+
+  let teamValue = 0;
+  let totalProfit = 0;
+  const rows: MySquadPlayer[] = data.map((r) => {
+    const pid = r.player_id as string;
+    const meta = pmap.get(pid);
+    const mv = (r.market_value as number) ?? null;
+    const buy = lastBuy.get(pid)?.price ?? null;
+    const profit = mv != null && buy != null ? mv - buy : null;
+    if (mv != null) teamValue += mv;
+    if (profit != null) totalProfit += profit;
+    return {
+      playerId: pid,
+      name: meta?.name ?? `#${pid}`,
+      position: meta?.position ?? (r.position as string) ?? null,
+      team: meta?.team ?? null,
+      marketValue: mv,
+      points: (r.points as number) ?? null,
+      avgPoints: (r.avg_points as number) ?? null,
+      status: (r.status as number) ?? null,
+      buyPrice: buy,
+      profit,
+    };
+  });
+  return { managerId: mid, rows, teamValue, totalProfit };
 }
 
 /**

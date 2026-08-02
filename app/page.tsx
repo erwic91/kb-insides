@@ -3,24 +3,18 @@ import {
   resolveLeague,
   getManagerTable,
   getCalibration,
-  getMarket,
   getSquadLandscape,
+  getMySquad,
   getMyAccess,
   type ManagerTableRow,
 } from "../lib/db/queries";
-import { computeBidAdvice } from "../lib/compute/bidadvisor";
 import { eur, eurFull, eurSigned, num, pct } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
 import InfoDot from "../components/InfoDot";
 import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
-import DashboardFavorites from "../components/DashboardFavorites";
-import {
-  MeinStanding,
-  BedrohungsRadar,
-  SpielerLandschaft,
-  Formkurve,
-} from "../components/Insights";
+import SquadTable from "../components/SquadTable";
+import { MeinStanding, SpielerLandschaft, Formkurve } from "../components/Insights";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -62,10 +56,10 @@ export default async function DashboardPage({
   }
 
   const { day, rows } = await getManagerTable(league);
-  const [calibration, marketListings, landscape] = await Promise.all([
+  const [calibration, landscape, squad] = await Promise.all([
     getCalibration(league),
-    getMarket(league),
     getSquadLandscape(league),
+    getMySquad(league),
   ]);
   // Konto/Maximalgebot sind rekonstruierbar, sobald eine Budget-Basis (Start-
   // Budget) konfiguriert ist. Gerechnet wird ab dem Startzeitpunkt (siehe
@@ -99,28 +93,6 @@ export default async function DashboardPage({
     .filter((r) => r.lastActiveDays != null)
     .sort((a, b) => (b.lastActiveDays ?? 0) - (a.lastActiveDays ?? 0))
     .slice(0, 3);
-
-  // Bid-Advisor: Marktchancen (freie Bahn / gewinnbar) aus den Max-Geboten.
-  const advice = computeBidAdvice(
-    rows.map((r) => ({ id: r.id, name: r.name, isMe: r.isMe, maxBid: r.maxBid })),
-    marketListings.map((l) => ({
-      playerId: l.playerId,
-      floor: l.price ?? l.marketValue ?? null,
-      offeredBy: l.offeredBy,
-    })),
-  );
-  const opportunities = showMoney
-    ? marketListings
-        .map((l) => ({ l, a: advice.get(l.playerId)! }))
-        .filter((x) => x.a && (x.a.verdict === "free" || x.a.verdict === "winnable"))
-        .sort((x, y) => {
-          const rank = (v: (typeof x)["a"]) => (v.verdict === "free" ? 0 : 1);
-          if (rank(x.a) !== rank(y.a)) return rank(x.a) - rank(y.a);
-          return (x.a.mustBid ?? 0) - (y.a.mustBid ?? 0);
-        })
-        .slice(0, 6)
-    : [];
-  const href = (base: string) => `${base}?league=${encodeURIComponent(league.id)}`;
 
   return (
     <main className="wrap">
@@ -215,57 +187,37 @@ export default async function DashboardPage({
             </div>
           </div>
         )}
+        {showMoney && (
+          <div className="card card-pad tile">
+            <div className="label">
+              Dein Gesamtwert
+              <InfoDot text="Kaderwert + Kontostand — dein exaktes Vermögen. Bei negativem Konto kann er unter dem Kaderwert liegen." />
+            </div>
+            <div className="value sm">{eurFull(me?.total ?? null)}</div>
+            <div className="hint">Kaderwert {eur(me?.teamValue ?? null)} + Konto</div>
+          </div>
+        )}
       </div>
 
-      <div className="g-2">
-        <MeinStanding rows={rows} showMoney={showMoney} leagueId={league.id} />
-        <BedrohungsRadar rows={rows} showMoney={showMoney} leagueId={league.id} />
-      </div>
+      <MeinStanding rows={rows} showMoney={showMoney} leagueId={league.id} />
 
-      <div className="g-2">
-        <DashboardFavorites listings={marketListings} leagueId={league.id} />
-        <div className="panel">
-          <div className="panel-head">
-            <h3>
-              Marktchancen · Bid-Advisor
-              <InfoDot text={'Vergleicht das Mindestgebot jedes Marktspielers mit dem stärksten Max-Gebot deiner Gegner. „Freie Bahn" = kein Gegner kann mitbieten; sonst steht dort, wie hoch du mindestens bieten musst (≥), um den stärksten Gegner zu überbieten.'} />
-            </h3>
-            {showMoney && <span className="count">{opportunities.length}</span>}
-          </div>
-          <div>
-            {!showMoney ? (
-              <div className="mrow muted">
-                Gebots-Tipps erscheinen, sobald Start-Budget/Reset gesetzt ist.
-              </div>
-            ) : opportunities.length === 0 ? (
-              <div className="mrow muted">Gerade keine klaren Chancen am Markt.</div>
-            ) : (
-              opportunities.map(({ l, a }) => (
-                <div className="mrow" key={l.playerId}>
-                  <span>
-                    <span className="pos-chip">{l.position ?? "—"}</span>
-                    <Link href={href(`/player/${l.playerId}`)} className="nm linklike">
-                      {l.playerName}
-                    </Link>
-                    <span className="muted sm"> · MW {eur(l.marketValue)}</span>
-                  </span>
-                  {a.verdict === "free" ? (
-                    <span
-                      className="pill"
-                      style={{ background: "rgba(15,122,90,.12)", color: "var(--gain)" }}
-                    >
-                      freie Bahn
-                    </span>
-                  ) : (
-                    <span className="num sm" style={{ color: "var(--signal)" }}>
-                      ≥ {eur(a.mustBid)}
-                    </span>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
+      <div className="section">
+        <div className="section-head">
+          <h2>
+            Dein Kader
+            <InfoDot text="Alle deine Spieler mit Marktwert, Kaufpreis, unrealisiertem Transfergewinn (Marktwert − Kaufpreis), Saisonpunkten, Ø-Punkten und Fitness-Status — direkt aus Kickbase." />
+          </h2>
+          {squad && squad.rows.length > 0 && (
+            <span className="note">
+              {squad.rows.length} Spieler · Gewinn {eurSigned(squad.totalProfit)}
+            </span>
+          )}
         </div>
+        {squad ? (
+          <SquadTable squad={squad} leagueId={league.id} />
+        ) : (
+          <div className="notice">Kein eigener Kader gefunden.</div>
+        )}
       </div>
 
       <div className="section">

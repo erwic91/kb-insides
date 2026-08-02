@@ -164,6 +164,7 @@ export default function ManagerTable({
               {cols.map((c) => {
                 const raw = r[c.key];
                 const exact = EURO_KEYS.has(c.key) && raw != null ? eurFull(raw) : undefined;
+                const delta = c.key === "teamValue" ? r.teamValueDeltaPct : null;
                 return (
                   <td
                     key={c.key}
@@ -172,6 +173,18 @@ export default function ManagerTable({
                     style={c.highlight ? { fontWeight: 600, color: "var(--signal)" } : undefined}
                   >
                     {c.render(r)}
+                    {delta != null && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          fontSize: 11,
+                          color: delta >= 0 ? "var(--gain)" : "var(--loss)",
+                        }}
+                      >
+                        {delta >= 0 ? "+" : "−"}
+                        {(Math.abs(delta) * 100).toFixed(1)} %
+                      </span>
+                    )}
                   </td>
                 );
               })}

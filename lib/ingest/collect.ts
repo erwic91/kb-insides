@@ -29,7 +29,9 @@ import {
   markIsMe,
   getLeagueMoneyBasis,
   replaceSquadPlayers,
+  upsertManagerTvDaily,
   type SquadPlayerRow,
+  type ManagerTvDailyRow,
 } from "../db/ingest";
 import {
   getCollectionTargets,
@@ -121,6 +123,7 @@ async function collectLeagueWide(
               avg_points: pl.ap ?? null,
               market_value: pl.mv ?? null,
               position: posLabel(pl.pos),
+              status: pl.st ?? null,
             });
             squadPlayerMeta.push({
               id: pl.i,
@@ -165,6 +168,18 @@ async function collectLeagueWide(
     await upsertManagerSnapshots(rows.snapshots);
     if (squadPlayerMeta.length > 0) await upsertPlayers(squadPlayerMeta);
     await replaceSquadPlayers(leagueId, squadPlayers);
+
+    // Täglicher Kaderwert je Manager (für den „Veränderung zum Vortag"-Trend).
+    const snapDate = new Date().toISOString().slice(0, 10);
+    const tvDaily: ManagerTvDailyRow[] = rows.snapshots
+      .filter((s) => s.team_value != null)
+      .map((s) => ({
+        league_id: leagueId,
+        manager_id: s.manager_id,
+        snap_date: snapDate,
+        team_value: s.team_value,
+      }));
+    if (tvDaily.length > 0) await upsertManagerTvDaily(tvDaily);
     await politeDelay();
 
     // M6 — Markt.

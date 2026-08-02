@@ -18,7 +18,7 @@
   --body: var(--font-body, "IBM Plex Sans"), system-ui, sans-serif;
   --mono: var(--font-mono, "IBM Plex Mono"), ui-monospace, monospace;
 
-  --wrap: 1180px;
+  --wrap: 1440px;
 }
 
 * {
