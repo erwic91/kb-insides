@@ -200,6 +200,19 @@ export async function captureFixtures(
     // Erfolgsprämien oder Handelsgewinn ist.
     await capture("manager_dashboard", `/v4/leagues/${primary}/managers/${mid}/dashboard`, token);
 
+    // Discovery: Kandidaten für Admin-Aktivitäten/Strafen & Liga-Feed. Jeder
+    // Treffer (200) zeigt seine Shape, 404 landet als Fehler im Bundle — so
+    // klärt ein Lauf, ob Admin-Strafen/-Boni über die API abrufbar sind.
+    const probes: [string, string][] = [
+      ["probe_activitiesfeed", `/v4/leagues/${primary}/activitiesFeed`],
+      ["probe_activities", `/v4/leagues/${primary}/activities`],
+      ["probe_feed", `/v4/leagues/${primary}/feed`],
+      ["probe_mgr_activities", `/v4/leagues/${primary}/managers/${mid}/activities`],
+      ["probe_mgr_transactions", `/v4/leagues/${primary}/managers/${mid}/transactions`],
+      ["probe_mgr_finances", `/v4/leagues/${primary}/managers/${mid}/finances`],
+    ];
+    for (const [name, path] of probes) await capture(name, path, token);
+
     playerId = findId(squad, ["pi", "pid", "playerId", "i", "id"]);
     if (playerId) {
       log.push(`→ Spieler ${playerId}`);

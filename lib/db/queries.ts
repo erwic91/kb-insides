@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "../supabase/server";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
 import { loginBonusSinceReset } from "../compute/loginBonus";
+import { getAdjustmentSums } from "./adjustments";
 import { computeBidAdvice, type BidAdvice } from "../compute/bidadvisor";
 import { START_BUDGET } from "../compute/constants";
 import type { Direction } from "../ingest/transfers";
@@ -223,7 +224,11 @@ export async function getManagerTable(
   const transfers = await getTransfersByManager(league.id);
   // „Ich" + exakter Kontostand kommen jetzt pro Nutzer aus league_access /
   // user_budget (nicht mehr aus managers.is_me / snapshots.cash_actual).
-  const [myAccess, myBudget] = await Promise.all([getMyAccess(), getMyBudget(league.id)]);
+  const [myAccess, myBudget, adjustments] = await Promise.all([
+    getMyAccess(),
+    getMyBudget(league.id),
+    getAdjustmentSums(league.id),
+  ]);
   const myCashActual = myBudget.get(day) ?? null;
   const now = Date.now();
   // Täglicher Login-Bonus als Tages-Summe ab Reset (10k → 100k/Tag), Annahme
@@ -266,7 +271,10 @@ export async function getManagerTable(
     const cashActual = isMe ? myCashActual : null;
     const reconstructed =
       league.startBudget > 0
-        ? reconstructCash(myTransfers ?? [], { startBudget: league.startBudget, prizes: loginBonus })
+        ? reconstructCash(myTransfers ?? [], {
+            startBudget: league.startBudget,
+            prizes: loginBonus + (adjustments.get(mid) ?? 0),
+          })
         : null;
     const cash = cashActual ?? reconstructed;
     const cashExact = cashActual != null;
@@ -315,6 +323,8 @@ export interface ManagerDetail {
   squadSize: number | null;
   cash: number | null;
   maxBid: number | null;
+  /** Summe der manuellen Korrekturen (Strafen/Boni), die ins Konto einfließen. */
+  adjustment: number;
   transfers: TransferLite[];
   trade: ReturnType<typeof realizedProfitFIFO>;
   bought: number;
@@ -366,11 +376,15 @@ export async function getManagerDetail(
     .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
 
   // Eigener Manager: exakter Kontostand aus /me/budget, sonst Rekonstruktion
-  // (inkl. Login-Bonus als Tages-Summe ab Reset). Auch ohne Transfers = Start-Budget.
+  // (inkl. Login-Bonus als Tages-Summe ab Reset + manuelle Korrekturen).
   const loginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
+  const adjustment = (await getAdjustmentSums(league.id)).get(managerId) ?? 0;
   const reconstructed =
     league.startBudget > 0
-      ? reconstructCash(transfers, { startBudget: league.startBudget, prizes: loginBonus })
+      ? reconstructCash(transfers, {
+          startBudget: league.startBudget,
+          prizes: loginBonus + adjustment,
+        })
       : null;
   const cash = cashActual != null ? cashActual : reconstructed;
   const teamValue = latest?.teamValue ?? null;
@@ -403,6 +417,7 @@ export async function getManagerDetail(
     squadSize: latest?.squadSize ?? null,
     cash,
     maxBid: bid,
+    adjustment,
     transfers,
     trade,
     bought,

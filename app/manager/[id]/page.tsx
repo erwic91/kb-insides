@@ -1,8 +1,22 @@
 import Link from "next/link";
 import { resolveLeague, getManagerDetail } from "../../../lib/db/queries";
+import { getAdjustments } from "../../../lib/db/adjustments";
+import { addManagerAdjustment, removeManagerAdjustment } from "./actions";
 import { eur, eurFull, eurSigned, num, pct, date } from "../../../lib/format";
+import type { CSSProperties } from "react";
 
 export const dynamic = "force-dynamic";
+
+const inputStyle: CSSProperties = {
+  background: "var(--paper)",
+  border: "1px solid var(--line)",
+  borderRadius: 3,
+  padding: "7px 10px",
+  fontFamily: "var(--mono)",
+  fontSize: 13,
+  color: "var(--ink)",
+};
+const selectStyle: CSSProperties = { ...inputStyle, fontFamily: "var(--body)" };
 
 function leagueHref(base: string, leagueId: string): string {
   return `${base}?league=${encodeURIComponent(leagueId)}`;
@@ -13,10 +27,10 @@ export default async function ManagerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ league?: string }>;
+  searchParams: Promise<{ league?: string; ok?: string; err?: string }>;
 }) {
   const { id } = await params;
-  const { league: requested } = await searchParams;
+  const { league: requested, ok, err } = await searchParams;
   const league = await resolveLeague(requested);
 
   if (!league) {
@@ -48,6 +62,12 @@ export default async function ManagerPage({
   }
 
   const net = m.sold - m.bought;
+  const adjustments = await getAdjustments(league.id, id);
+  const OKS: Record<string, string> = { added: "Korrektur gespeichert.", removed: "Korrektur entfernt." };
+  const ERRS: Record<string, string> = {
+    access: "Keine Berechtigung für diese Liga.",
+    amount: "Bitte einen Betrag größer 0 eingeben.",
+  };
 
   return (
     <main className="page">
@@ -84,10 +104,15 @@ export default async function ManagerPage({
           <div className="hint">Serie {m.streak ?? "—"}</div>
         </div>
         <div className="card card-pad tile">
-          <div className="label">Konto (rekonstruiert)</div>
+          <div className="label">Konto{m.isMe ? " (exakt)" : " (rekonstruiert)"}</div>
           <div className="value sm">{eur(m.cash)}</div>
           <div className="hint">
-            {m.transfers.length > 0 ? `aus ${m.transfers.length} Transfers` : "keine Transfers"}
+            {m.isMe
+              ? "exakt aus /me/budget"
+              : m.transfers.length > 0
+                ? `aus ${m.transfers.length} Transfers`
+                : "keine Transfers"}
+            {m.adjustment !== 0 ? ` · inkl. Korrektur ${eurSigned(m.adjustment)}` : ""}
           </div>
         </div>
         <div className="card card-pad tile">
@@ -124,6 +149,84 @@ export default async function ManagerPage({
               {m.trade.wins} von {m.trade.closedTrades} mit Gewinn
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h2>Manuelle Korrekturen</h2>
+          <span className="note">Strafen / Boni des Liga-Admins</span>
+        </div>
+
+        {ok && <div className="notice">{OKS[ok] ?? "OK."}</div>}
+        {err && <div className="notice warn">{ERRS[err] ?? "Fehler."}</div>}
+
+        <div className="card card-pad">
+          <p className="note" style={{ marginBottom: 12 }}>
+            Admin-Strafen/-Boni siehst du in Kickbase unter „Aktivitäten", sie sind aber nicht
+            über die API abrufbar. Trage sie hier ein — die Summe fließt in den rekonstruierten
+            Kontostand & das Maximalgebot.
+            {m.isMe ? " (Dein eigenes Konto ist exakt — Korrekturen wirken nur bei Gegnern.)" : ""}
+          </p>
+
+          <form
+            action={addManagerAdjustment}
+            style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}
+          >
+            <input type="hidden" name="leagueId" value={league.id} />
+            <input type="hidden" name="managerId" value={id} />
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+              <span className="eyebrow" style={{ fontSize: 10 }}>Art</span>
+              <select name="kind" style={selectStyle} defaultValue="penalty">
+                <option value="penalty">Strafe (−)</option>
+                <option value="bonus">Bonus (+)</option>
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12 }}>
+              <span className="eyebrow" style={{ fontSize: 10 }}>Betrag (€)</span>
+              <input type="number" name="amount" min={1} step={1} required placeholder="z. B. 5000000" style={inputStyle} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, flex: 1, minWidth: 160 }}>
+              <span className="eyebrow" style={{ fontSize: 10 }}>Notiz (optional)</span>
+              <input type="text" name="note" placeholder="z. B. Strafe Spieltag 3" style={inputStyle} />
+            </label>
+            <button className="btn" type="submit">Hinzufügen</button>
+          </form>
+
+          {adjustments.length > 0 && (
+            <div className="table-wrap" style={{ marginTop: 14 }}>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th className="l">Datum</th>
+                    <th>Betrag</th>
+                    <th className="l">Notiz</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {adjustments.map((a) => (
+                    <tr key={a.id}>
+                      <td className="l muted">{date(a.createdAt)}</td>
+                      <td className={a.amount < 0 ? "neg" : "pos"}>{eurSigned(a.amount)}</td>
+                      <td className="l muted">{a.note ?? "—"}</td>
+                      <td>
+                        <form action={removeManagerAdjustment}>
+                          <input type="hidden" name="leagueId" value={league.id} />
+                          <input type="hidden" name="managerId" value={id} />
+                          <input type="hidden" name="id" value={a.id} />
+                          <button className="btn" type="submit">Entfernen</button>
+                        </form>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="note" style={{ marginTop: 8 }}>
+                Summe der Korrekturen: <strong>{eurSigned(m.adjustment)}</strong>
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
