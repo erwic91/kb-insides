@@ -7,6 +7,7 @@ import {
   fetchMeBudget,
   fetchManagerDashboard,
   fetchManagerSquad,
+  fetchPlayerMarketValue,
 } from "../kickbase/endpoints";
 import { politeDelay } from "../kickbase/http";
 import { parseLeagueIds } from "../env";
@@ -30,12 +31,15 @@ import {
   getLeagueMoneyBasis,
   replaceSquadPlayers,
   upsertManagerTvDaily,
+  getBuyTransfersMissingMv,
+  updateTransferMvAtTime,
   type SquadPlayerRow,
   type ManagerTvDailyRow,
 } from "../db/ingest";
 import {
   getCollectionTargets,
   getUserLeagues,
+  getConnectionState,
   upsertUserBudget,
   reconcileLeagueAccess,
 } from "../db/connections";
@@ -210,6 +214,50 @@ async function collectLeagueWide(
   }
 }
 
+const EPOCH_DAY_MS = 86_400_000;
+
+/**
+ * Backfill des Marktwerts zum Kaufzeitpunkt (Overpay-Basis) für die eigenen
+ * Käufe eines Managers. Gedeckelt (cap) und pro Spieler gecacht — eine
+ * MV-Kurve je Spieler pro Lauf. Läuft best-effort; Fehler werden ignoriert.
+ */
+async function backfillOverpay(
+  leagueId: string,
+  managerId: string,
+  token: string,
+  cap = 15,
+): Promise<void> {
+  const missing = await getBuyTransfersMissingMv(leagueId, managerId, cap);
+  if (missing.length === 0) return;
+
+  const curves = new Map<string, { d: number; mv: number }[]>();
+  for (const t of missing) {
+    if (!curves.has(t.player_id)) {
+      try {
+        const raw = await fetchPlayerMarketValue(leagueId, t.player_id, "365", { token });
+        const pts = (raw.it ?? [])
+          .filter((p) => p.dt != null && p.mv != null)
+          .map((p) => ({ d: p.dt as number, mv: p.mv as number }))
+          .sort((a, b) => a.d - b.d);
+        curves.set(t.player_id, pts);
+      } catch {
+        curves.set(t.player_id, []);
+      }
+      await politeDelay();
+    }
+    const pts = curves.get(t.player_id) ?? [];
+    if (pts.length === 0) continue;
+    const targetDay = Math.floor(Date.parse(t.ts) / EPOCH_DAY_MS);
+    let mv: number | null = null;
+    for (const p of pts) {
+      if (p.d <= targetDay) mv = p.mv;
+      else break;
+    }
+    if (mv == null) mv = pts[0]!.mv; // Kauf vor dem ersten Kurvenpunkt → frühester MW
+    await updateTransferMvAtTime(leagueId, t.id, mv);
+  }
+}
+
 /** Nutzer-privater exakter Kontostand (/me/budget) → user_budget. */
 async function collectUserBudget(
   userId: string,
@@ -245,12 +293,12 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
 
   // Ligen deduplizieren: je Liga ein (erstes gesundes) Token.
   const leagueToken = new Map<string, string>();
-  const budgetTasks: { userId: string; leagueId: string; token: string }[] = [];
+  const budgetTasks: { userId: string; kbUserId: string; leagueId: string; token: string }[] = [];
   for (const t of targets) {
     const token = await tokenFor(t.userId);
     if (!token) continue;
     if (!leagueToken.has(t.leagueId)) leagueToken.set(t.leagueId, token);
-    budgetTasks.push({ userId: t.userId, leagueId: t.leagueId, token });
+    budgetTasks.push({ userId: t.userId, kbUserId: t.kbUserId, leagueId: t.leagueId, token });
   }
 
   const leagues: LeagueIngestResult[] = [];
@@ -262,7 +310,7 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     await politeDelay();
   }
 
-  // Pro (Nutzer, Liga): exakter eigener Kontostand.
+  // Pro (Nutzer, Liga): exakter eigener Kontostand + Overpay-Backfill.
   for (const t of budgetTasks) {
     const day = leagueDay.get(t.leagueId);
     if (day == null) continue;
@@ -272,6 +320,11 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
       // /me/budget-Fehler pro Nutzer isolieren.
     }
     await politeDelay();
+    try {
+      await backfillOverpay(t.leagueId, t.kbUserId, t.token);
+    } catch {
+      // Overpay-Backfill best-effort.
+    }
   }
 
   return { leagues };
@@ -307,6 +360,8 @@ export async function runCollectForUser(
 
   const targets = leagueId ? leagues.filter((l) => l.leagueId === leagueId) : leagues;
   if (targets.length === 0) return [{ leagueId: leagueId ?? "", error: "Liga nicht aktiv." }];
+
+  const kbUserId = (await getConnectionState(userId))?.kbUserId ?? null;
   const results: LeagueIngestResult[] = [];
   for (const l of targets) {
     const r = await collectLeagueWide(l.leagueId, token);
@@ -315,6 +370,13 @@ export async function runCollectForUser(
         await collectUserBudget(userId, l.leagueId, token, r.day);
       } catch {
         // isolieren
+      }
+    }
+    if (kbUserId) {
+      try {
+        await backfillOverpay(l.leagueId, kbUserId, token);
+      } catch {
+        // Overpay-Backfill best-effort.
       }
     }
     results.push(r);

@@ -762,6 +762,41 @@ export async function getMySquad(league: LeagueLite): Promise<MySquad | null> {
   return { managerId: mid, rows, teamValue, totalProfit };
 }
 
+export interface OverpayStat {
+  /** Ø Overpay je Kauf (Kaufpreis − Marktwert am Kauftag). */
+  avg: number | null;
+  /** Summe Overpay über alle erfassten Käufe. */
+  total: number;
+  /** Anzahl Käufe mit bekanntem Marktwert-zum-Zeitpunkt. */
+  count: number;
+}
+
+/**
+ * Overpay-Statistik eines Managers: gezahlter Aufpreis über dem Marktwert je
+ * Kauf. Basis ist `transfers.mv_at_time` (im Collector aus der MV-Kurve
+ * gebackfillt). Positiv = über Marktwert gekauft.
+ */
+export async function getOverpay(league: LeagueLite, managerId: string): Promise<OverpayStat> {
+  const supabase = await getReadClient();
+  if (!supabase) return { avg: null, total: 0, count: 0 };
+  const { data } = await supabase
+    .from("transfers")
+    .select("price, mv_at_time")
+    .eq("league_id", league.id)
+    .eq("to_manager", managerId)
+    .eq("direction", "buy")
+    .not("mv_at_time", "is", null);
+  let total = 0;
+  let count = 0;
+  for (const r of data ?? []) {
+    const mv = r.mv_at_time as number | null;
+    if (mv == null) continue;
+    total += ((r.price as number) ?? 0) - mv;
+    count += 1;
+  }
+  return { avg: count > 0 ? Math.round(total / count) : null, total, count };
+}
+
 /**
  * Bid-Advisor: Marktangebote + Gebotsberatung (stärkstes konkurrierendes
  * Max-Gebot je Spieler). `advice` ist leer/„unknown", wenn keine belastbaren

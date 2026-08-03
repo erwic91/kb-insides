@@ -63,7 +63,6 @@ const COLS: Col[] = [
     key: "maxBid",
     label: "Maximalgebot",
     money: true,
-    highlight: true,
     info: "Höchstes Gebot: Konto + 33 % × (Kaderwert + min(Konto, 0)) — die Kickbase-Regel.",
     render: (r) => eur(r.maxBid),
   },

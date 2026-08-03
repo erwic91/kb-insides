@@ -171,6 +171,44 @@ export async function upsertManagerSnapshots(snapshots: SnapshotRow[]): Promise<
   if (error) throw new Error(`manager_snapshots upsert fehlgeschlagen: ${error.message}`);
 }
 
+/** Käufe eines Managers ohne Marktwert-zum-Zeitpunkt (für den Overpay-Backfill). */
+export async function getBuyTransfersMissingMv(
+  leagueId: string,
+  managerId: string,
+  limit = 20,
+): Promise<{ id: string; player_id: string; ts: string; price: number }[]> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("transfers")
+    .select("id, player_id, ts, price")
+    .eq("league_id", leagueId)
+    .eq("to_manager", managerId)
+    .eq("direction", "buy")
+    .is("mv_at_time", null)
+    .not("ts", "is", null)
+    .limit(limit);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    player_id: r.player_id as string,
+    ts: r.ts as string,
+    price: (r.price as number) ?? 0,
+  }));
+}
+
+/** Setzt den Marktwert zum Transferzeitpunkt (Overpay-Basis). */
+export async function updateTransferMvAtTime(
+  leagueId: string,
+  id: string,
+  mv: number,
+): Promise<void> {
+  const supabase = getServiceClient();
+  await supabase
+    .from("transfers")
+    .update({ mv_at_time: mv })
+    .eq("league_id", leagueId)
+    .eq("id", id);
+}
+
 export async function upsertTransfers(transfers: TransferRow[]): Promise<void> {
   if (transfers.length === 0) return;
   const supabase = getServiceClient();

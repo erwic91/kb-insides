@@ -6,6 +6,7 @@ import {
   getSquadLandscape,
   getMySquad,
   getMyAccess,
+  getOverpay,
   type ManagerTableRow,
 } from "../lib/db/queries";
 import { eur, eurFull, eurSigned, num, pct } from "../lib/format";
@@ -67,6 +68,7 @@ export default async function DashboardPage({
   const showMoney = league.startBudget > 0;
   const active = rows.filter((r) => r.active);
   const me = rows.find((r) => r.isMe);
+  const overpay = showMoney && me ? await getOverpay(league, me.id) : null;
 
   // Rang: in gpm:2 nach Gesamtwert, sonst nach Punkten.
   const metric = (r: ManagerTableRow) =>
@@ -195,6 +197,23 @@ export default async function DashboardPage({
             </div>
             <div className="value sm">{eurFull(me?.total ?? null)}</div>
             <div className="hint">Kaderwert {eur(me?.teamValue ?? null)} + Konto</div>
+          </div>
+        )}
+        {overpay && overpay.count > 0 && (
+          <div className="card card-pad tile">
+            <div className="label">
+              Deine Ø Overpay
+              <InfoDot text={'Durchschnittlich gezahlter Aufpreis über dem Marktwert je Kauf (Kaufpreis − Marktwert am Kauftag). Positiv = über Marktwert gekauft. „Gesamt" = Summe über alle erfassten Käufe.'} />
+            </div>
+            <div
+              className="value sm"
+              style={{ color: (overpay.avg ?? 0) > 0 ? "var(--loss)" : "var(--gain)" }}
+            >
+              {eurSigned(overpay.avg)}
+            </div>
+            <div className="hint">
+              Gesamt {eurSigned(overpay.total)} · {overpay.count} Käufe
+            </div>
           </div>
         )}
       </div>
