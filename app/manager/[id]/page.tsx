@@ -257,7 +257,7 @@ export default async function ManagerPage({
                     <td className="l muted">{date(t.ts)}</td>
                     <td className="l">
                       <Link href={leagueHref(`/player/${t.playerId}`, league.id)}>
-                        #{t.playerId}
+                        {t.playerName}
                       </Link>
                     </td>
                     <td className="l">

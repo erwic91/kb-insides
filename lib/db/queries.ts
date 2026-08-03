@@ -64,6 +64,8 @@ export interface ManagerTableRow {
 export interface TransferLite {
   id: string;
   playerId: string;
+  /** Klartext-Name des Spielers (Fallback `#<id>`, wenn unbekannt). */
+  playerName: string;
   direction: Direction;
   price: number;
   ts: string | null;
@@ -206,13 +208,26 @@ async function getTransfersByManager(
     .eq("league_id", leagueId);
   if (error || !data) return byManager;
 
+  // Spielernamen für alle referenzierten IDs auflösen (Fallback `#<id>`).
+  const pids = [...new Set(data.map((r) => r.player_id as string))];
+  const names = new Map<string, string>();
+  if (pids.length > 0) {
+    const { data: pdata } = await supabase
+      .from("players")
+      .select("id, name")
+      .in("id", pids);
+    for (const p of pdata ?? []) names.set(p.id as string, p.name as string);
+  }
+
   for (const t of data) {
     const direction = (t.direction as Direction) ?? "buy";
     const owner = direction === "buy" ? (t.to_manager as string) : (t.from_manager as string);
     if (!owner) continue;
+    const pid = t.player_id as string;
     const row: TransferLite = {
       id: t.id as string,
-      playerId: t.player_id as string,
+      playerId: pid,
+      playerName: names.get(pid) ?? `#${pid}`,
       direction,
       price: (t.price as number) ?? 0,
       ts: (t.ts as string) ?? null,
