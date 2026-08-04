@@ -274,7 +274,6 @@ async function backfillSquadMvHistory(
 ): Promise<void> {
   const players = await getManagerSquadPlayers(leagueId, managerId);
   if (players.length === 0) return;
-  const today = Math.floor(Date.now() / EPOCH_DAY_MS);
 
   for (const p of players.slice(0, cap)) {
     let mvYesterday: number | null = null;
@@ -285,17 +284,14 @@ async function backfillSquadMvHistory(
         .filter((q) => q.dt != null && q.mv != null)
         .map((q) => ({ d: q.dt as number, mv: q.mv as number }))
         .sort((a, b) => a.d - b.d);
-      // Marktwert, der an einem Zieltag galt: letzter Kurvenpunkt mit d <= Ziel.
-      const mvForDay = (target: number): number | null => {
-        let mv: number | null = null;
-        for (const q of pts) {
-          if (q.d <= target) mv = q.mv;
-          else break;
-        }
-        return mv;
-      };
-      mvYesterday = mvForDay(today - 1);
-      mvDayBefore = mvForDay(today - 2);
+      // Kickbase aktualisiert die Marktwerte täglich um 22:15 (deutscher Zeit)
+      // und hängt dann einen neuen Kurvenpunkt an. Der LETZTE Punkt spiegelt
+      // daher stets den aktuellen Marktwert (= market_value), der vorletzte ist
+      // „gestern", der vorvorletzte „vorgestern". Damit folgt die Tagesgrenze
+      // automatisch dem 22:15-Update — ohne eigene Uhrzeit-/Zeitzonen-Logik.
+      const n = pts.length;
+      if (n >= 2) mvYesterday = pts[n - 2]!.mv;
+      if (n >= 3) mvDayBefore = pts[n - 3]!.mv;
     } catch {
       // Kurve nicht verfügbar → Historie bleibt leer (Spalte zeigt „—").
     }
