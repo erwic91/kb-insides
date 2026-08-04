@@ -704,6 +704,12 @@ export interface MySquadPlayer {
   buyPrice: number | null;
   /** Unrealisierter Transfergewinn = Marktwert − Kaufpreis. */
   profit: number | null;
+  /** Marktwert-Änderung seit gestern (heute − gestern) + Prozent (Basis gestern). */
+  mvChangeDay: number | null;
+  mvChangeDayPct: number | null;
+  /** Marktwert-Änderung vorgestern→gestern + Prozent (Basis vorgestern). */
+  mvChangePrev: number | null;
+  mvChangePrevPct: number | null;
 }
 
 export interface MySquad {
@@ -726,7 +732,7 @@ export async function getMySquad(league: LeagueLite): Promise<MySquad | null> {
 
   const { data } = await supabase
     .from("squad_players")
-    .select("player_id, points, avg_points, market_value, position, status")
+    .select("player_id, points, avg_points, market_value, position, status, mv_prev_day, mv_prev2_day")
     .eq("league_id", league.id)
     .eq("manager_id", mid)
     .order("market_value", { ascending: false, nullsFirst: false });
@@ -761,6 +767,15 @@ export async function getMySquad(league: LeagueLite): Promise<MySquad | null> {
     const profit = mv != null && buy != null ? mv - buy : null;
     if (mv != null) teamValue += mv;
     if (profit != null) totalProfit += profit;
+
+    // Marktwert-Tagesentwicklung: heute (mv) vs. gestern (mvPrev) vs. vorgestern.
+    const mvPrev = (r.mv_prev_day as number) ?? null;
+    const mvPrev2 = (r.mv_prev2_day as number) ?? null;
+    const mvChangeDay = mv != null && mvPrev != null ? mv - mvPrev : null;
+    const mvChangeDayPct = mvChangeDay != null && mvPrev ? mvChangeDay / mvPrev : null;
+    const mvChangePrev = mvPrev != null && mvPrev2 != null ? mvPrev - mvPrev2 : null;
+    const mvChangePrevPct = mvChangePrev != null && mvPrev2 ? mvChangePrev / mvPrev2 : null;
+
     return {
       playerId: pid,
       name: meta?.name ?? `#${pid}`,
@@ -772,6 +787,10 @@ export async function getMySquad(league: LeagueLite): Promise<MySquad | null> {
       status: (r.status as number) ?? null,
       buyPrice: buy,
       profit,
+      mvChangeDay,
+      mvChangeDayPct,
+      mvChangePrev,
+      mvChangePrevPct,
     };
   });
   return { managerId: mid, rows, teamValue, totalProfit };

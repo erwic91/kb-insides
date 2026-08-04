@@ -33,6 +33,8 @@ import {
   upsertManagerTvDaily,
   getBuyTransfersMissingMv,
   updateTransferMvAtTime,
+  getManagerSquadPlayers,
+  updateSquadMvHistory,
   type SquadPlayerRow,
   type ManagerTvDailyRow,
 } from "../db/ingest";
@@ -259,6 +261,49 @@ async function backfillOverpay(
   }
 }
 
+/**
+ * Backfill der Marktwert-Tageshistorie (gestern/vorgestern) für den eigenen
+ * Kader — Basis für „Entwicklung seit gestern". Je Spieler eine MV-Kurve,
+ * daraus der Marktwert von gestern und vorgestern. Gedeckelt, best-effort.
+ */
+async function backfillSquadMvHistory(
+  leagueId: string,
+  managerId: string,
+  token: string,
+  cap = 20,
+): Promise<void> {
+  const players = await getManagerSquadPlayers(leagueId, managerId);
+  if (players.length === 0) return;
+  const today = Math.floor(Date.now() / EPOCH_DAY_MS);
+
+  for (const p of players.slice(0, cap)) {
+    let mvYesterday: number | null = null;
+    let mvDayBefore: number | null = null;
+    try {
+      const raw = await fetchPlayerMarketValue(leagueId, p.player_id, "365", { token });
+      const pts = (raw.it ?? [])
+        .filter((q) => q.dt != null && q.mv != null)
+        .map((q) => ({ d: q.dt as number, mv: q.mv as number }))
+        .sort((a, b) => a.d - b.d);
+      // Marktwert, der an einem Zieltag galt: letzter Kurvenpunkt mit d <= Ziel.
+      const mvForDay = (target: number): number | null => {
+        let mv: number | null = null;
+        for (const q of pts) {
+          if (q.d <= target) mv = q.mv;
+          else break;
+        }
+        return mv;
+      };
+      mvYesterday = mvForDay(today - 1);
+      mvDayBefore = mvForDay(today - 2);
+    } catch {
+      // Kurve nicht verfügbar → Historie bleibt leer (Spalte zeigt „—").
+    }
+    await updateSquadMvHistory(leagueId, managerId, p.player_id, mvYesterday, mvDayBefore);
+    await politeDelay();
+  }
+}
+
 /** Nutzer-privater exakter Kontostand (/me/budget) → user_budget. */
 async function collectUserBudget(
   userId: string,
@@ -326,6 +371,11 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     } catch {
       // Overpay-Backfill best-effort.
     }
+    try {
+      await backfillSquadMvHistory(t.leagueId, t.kbUserId, t.token);
+    } catch {
+      // MV-Historie best-effort.
+    }
   }
 
   return { leagues };
@@ -378,6 +428,11 @@ export async function runCollectForUser(
         await backfillOverpay(l.leagueId, kbUserId, token);
       } catch {
         // Overpay-Backfill best-effort.
+      }
+      try {
+        await backfillSquadMvHistory(l.leagueId, kbUserId, token);
+      } catch {
+        // MV-Historie best-effort.
       }
     }
     results.push(r);

@@ -16,6 +16,9 @@ export default function SquadTable({ squad, leagueId }: { squad: MySquad; league
     );
   }
   const statusLabel = (st: number | null) => (st == null || st === 0 ? "fit" : "angeschlagen");
+  const col = (v: number) => (v >= 0 ? "var(--gain)" : "var(--loss)");
+  // Prozent mit Vorzeichen, deutsches Dezimalkomma (z. B. „+1,3 %").
+  const fmtPct = (x: number) => `${x >= 0 ? "+" : "−"}${Math.abs(x * 100).toFixed(1).replace(".", ",")} %`;
 
   return (
     <div className="table-wrap">
@@ -27,6 +30,9 @@ export default function SquadTable({ squad, leagueId }: { squad: MySquad; league
             <th className="l">Team</th>
             <th className="l">Status</th>
             <th>Marktwert</th>
+            <th title="Marktwert-Änderung von gestern auf heute (€ und %); darunter klein die Steigerung des Vortages (vorgestern → gestern).">
+              Entwicklung seit gestern
+            </th>
             <th>Kaufpreis</th>
             <th>Gewinn</th>
             <th>Punkte</th>
@@ -49,6 +55,27 @@ export default function SquadTable({ squad, leagueId }: { squad: MySquad; league
                 </span>
               </td>
               <td title={eurFull(p.marketValue)}>{eur(p.marketValue)}</td>
+              <td>
+                {p.mvChangeDay == null ? (
+                  "—"
+                ) : (
+                  <>
+                    <span style={{ color: col(p.mvChangeDay) }} title={eurFull(p.mvChangeDay)}>
+                      {eurSigned(p.mvChangeDay)}
+                      {p.mvChangeDayPct != null && ` (${fmtPct(p.mvChangeDayPct)})`}
+                    </span>
+                    {p.mvChangePrev != null && (
+                      <div style={{ fontSize: 11, marginTop: 2, color: "var(--mute)" }}>
+                        vorgestern{" "}
+                        <span style={{ color: col(p.mvChangePrev) }} title={eurFull(p.mvChangePrev)}>
+                          {eurSigned(p.mvChangePrev)}
+                          {p.mvChangePrevPct != null && ` (${fmtPct(p.mvChangePrevPct)})`}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </td>
               <td title={eurFull(p.buyPrice)}>{p.buyPrice != null ? eur(p.buyPrice) : "—"}</td>
               <td
                 style={{
@@ -71,6 +98,7 @@ export default function SquadTable({ squad, leagueId }: { squad: MySquad; league
             <td title={eurFull(squad.teamValue)}>
               <strong>{eur(squad.teamValue)}</strong>
             </td>
+            <td />
             <td />
             <td
               style={{ color: squad.totalProfit >= 0 ? "var(--gain)" : "var(--loss)" }}

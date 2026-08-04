@@ -3,7 +3,9 @@ import { getCurrentUser } from "../../../../lib/supabase/server";
 import { runCollectForUser } from "../../../../lib/ingest/collect";
 
 // Sammelt die aktive Liga des angemeldeten Nutzers + dessen /me/budget.
-export const maxDuration = 120;
+// Höheres Limit, da zusätzlich pro Kaderspieler die MV-Kurve geholt wird
+// (Tages-Entwicklung). Die Plattform deckelt den Wert bei Bedarf.
+export const maxDuration = 300;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
