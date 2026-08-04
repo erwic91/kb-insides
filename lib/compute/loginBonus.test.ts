@@ -50,3 +50,39 @@ describe("loginBonusSinceReset", () => {
     expect(loginBonusSinceReset(reset, Date.parse(reset) - DAY)).toBe(0);
   });
 });
+
+describe("loginBonusSinceReset — Tageswechsel um 00:30 deutscher Zeit", () => {
+  // Liga 4A: Reset 2026-07-28 07:40 UTC (= 09:40 Berlin, Sommerzeit).
+  const reset = "2026-07-28T07:40:00Z";
+
+  it("kurz VOR 00:30 Berlin (22:29 UTC) → noch Tag 6 = 210k", () => {
+    // 2026-08-03 22:29 UTC = 2026-08-04 00:29 Berlin (CEST) → zählt zum 03.08.
+    expect(loginBonusSinceReset(reset, Date.parse("2026-08-03T22:29:00Z"))).toBe(210_000);
+  });
+  it("kurz NACH 00:30 Berlin (22:31 UTC) → Tag 7 = 280k", () => {
+    // 2026-08-03 22:31 UTC = 2026-08-04 00:31 Berlin (CEST) → neuer Bonus-Tag.
+    expect(loginBonusSinceReset(reset, Date.parse("2026-08-03T22:31:00Z"))).toBe(280_000);
+  });
+  it("die alte Reset-Uhrzeit (07:40 UTC) löst KEINEN Wechsel mehr aus", () => {
+    // Vor 07:40 UTC am selben Tag ist der Wert schon der des neuen Bonus-Tags.
+    const before = loginBonusSinceReset(reset, Date.parse("2026-08-04T06:00:00Z"));
+    const after = loginBonusSinceReset(reset, Date.parse("2026-08-04T08:00:00Z"));
+    expect(before).toBe(280_000);
+    expect(after).toBe(280_000);
+  });
+});
+
+describe("loginBonusSinceReset — DST-Grenze im Winter (00:30 = 23:30 UTC)", () => {
+  const reset = "2025-12-01T12:00:00Z"; // 13:00 Berlin (CET)
+  it("kurz VOR 23:30 UTC → noch Tag 4", () => {
+    // 2025-12-05 23:29 UTC = 2025-12-06 00:29 Berlin (CET) → zählt zum 05.12.
+    expect(loginBonusSinceReset(reset, Date.parse("2025-12-05T23:29:00Z"))).toBe(
+      loginBonusTotal(4),
+    );
+  });
+  it("kurz NACH 23:30 UTC → Tag 5", () => {
+    expect(loginBonusSinceReset(reset, Date.parse("2025-12-05T23:31:00Z"))).toBe(
+      loginBonusTotal(5),
+    );
+  });
+});

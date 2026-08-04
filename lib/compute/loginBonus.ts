@@ -45,14 +45,51 @@ export function loginBonusTotal(daysSinceReset: number): number {
 
 const DAY_MS = 86_400_000;
 
+/** Zeitzone & Uhrzeit, zu der der Login-Bonus-Tag nachts umspringt. */
+export const BONUS_TZ = "Europe/Berlin";
+export const BONUS_ROLLOVER_MINUTES = 30; // 00:30 Ortszeit
+
+/**
+ * Ganzzahliger „Bonus-Tag"-Schlüssel für einen Zeitpunkt. Der Bonus-Tag
+ * wechselt NICHT zur Reset-Uhrzeit, sondern jede Nacht um 00:30 deutscher Zeit.
+ * Ein Zeitpunkt vor 00:30 Ortszeit gehört daher noch zum Vortag.
+ *
+ * Über `Intl` (Europe/Berlin) → DST-sicher: im Sommer springt der Tag um
+ * 22:30 UTC, im Winter um 23:30 UTC. 00:30 liegt vor jedem DST-Sprung (02:00/
+ * 03:00), die Grenze ist also immer eindeutig.
+ */
+function bonusDayKey(ms: number): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BONUS_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(ms));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value);
+  const y = get("year");
+  const mo = get("month");
+  const d = get("day");
+  const minutesOfDay = get("hour") * 60 + get("minute");
+  // Reines Kalenderdatum (Ortszeit) als Tagesnummer; vor 00:30 zählt der Vortag.
+  let key = Math.floor(Date.UTC(y, mo - 1, d) / DAY_MS);
+  if (minutesOfDay < BONUS_ROLLOVER_MINUTES) key -= 1;
+  return key;
+}
+
 /**
  * Kumulierter Login-Bonus seit dem Reset (`resetIso`) bis `nowMs`. Null-sicher:
  * fehlt das Reset-Datum, ist der Bonus 0 (kein Anker → keine Schätzung).
+ * Die Tageszählung folgt dem 00:30-Ortszeit-Wechsel (siehe `bonusDayKey`),
+ * NICHT der Reset-Uhrzeit.
  */
 export function loginBonusSinceReset(resetIso: string | null, nowMs: number): number {
   if (!resetIso) return 0;
   const resetMs = Date.parse(resetIso);
-  if (Number.isNaN(resetMs) || nowMs < resetMs) return 0;
-  const days = Math.floor((nowMs - resetMs) / DAY_MS);
+  if (Number.isNaN(resetMs)) return 0;
+  const days = bonusDayKey(nowMs) - bonusDayKey(resetMs);
+  if (days <= 0) return 0;
   return loginBonusTotal(days);
 }
