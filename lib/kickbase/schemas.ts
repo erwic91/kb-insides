@@ -84,15 +84,15 @@ export type ManagerDashboard = z.infer<typeof ManagerDashboardSchema>;
  */
 export const SquadPlayerSchema = z
   .object({
-    i: z.coerce.string().nullish(), // Spieler-ID
-    n: z.coerce.string().nullish(), // Nachname
+    pi: z.coerce.string().nullish(), // Spieler-ID (echtes Feld: `pi`, NICHT `i`)
+    pn: z.coerce.string().nullish(), // Nachname (echtes Feld: `pn`, NICHT `n`)
     pos: z.coerce.number().nullish(), // Position
     mv: z.coerce.number().nullish(), // Marktwert
-    p: z.coerce.number().nullish(), // Punkte (Saison)
-    ap: z.coerce.number().nullish(), // Ø-Punkte
     st: z.coerce.number().nullish(), // Status (0 = fit; >0 = Ausfall/angeschlagen)
     lst: z.coerce.number().nullish(), // Aufstellungs-Status
     tid: z.coerce.string().nullish(), // Team-ID
+    // Hinweis: Der Squad-Endpoint liefert KEINE Punkte (kein `p`/`ap`),
+    // nur Marktwert-Felder (mvt/mvgl/sdmvt/…). Punkte kommen aus anderen Quellen.
   })
   .passthrough();
 

@@ -29,17 +29,34 @@ describe("Kickbase-Schemas gegen echte Fixtures", () => {
     expect(parsed.b).toBe(200250000);
   });
 
-  it("SquadSchema wirft NICHT bei nicht-leeren Kadern mit unsauberen Typen", () => {
-    // Realistische Varianz: numerische ID, null-Felder, String-Zahlen.
+  it("SquadSchema liest die ECHTEN Feldnamen (pi/pn), nicht i/n", () => {
+    // Exakt die Shape aus der echten /squad-Antwort (Capture-Bundle):
+    // Spieler-ID = `pi`, Name = `pn`; KEINE Punkte-Felder.
     const raw = {
       it: [
-        { i: 118, n: null, pos: "3", mv: 12357935, tid: 5, extra: "x" },
-        { i: "2141", mv: null },
+        {
+          mv: 11405235,
+          pi: "13448",
+          pn: "Aouchiche",
+          st: 0,
+          lst: 0,
+          mvt: 1,
+          pos: 3,
+          tid: "8",
+          iotm: false,
+        },
+        { pi: "2141", pn: "Musiala", mv: null, pos: "4", st: 1 },
       ],
     };
     const parsed = SquadSchema.parse(raw);
     expect(parsed.it).toHaveLength(2);
-    expect(parsed.it[0]?.mv).toBe(12357935);
+    // Die ID kommt aus `pi` — vorher fälschlich aus `i` gelesen → immer null.
+    expect(parsed.it[0]?.pi).toBe("13448");
+    expect(parsed.it[0]?.pn).toBe("Aouchiche");
+    expect(parsed.it[0]?.mv).toBe(11405235);
+    expect(parsed.it[0]?.st).toBe(0);
+    // `i`/`n` existieren nicht mehr am geparsten Objekt.
+    expect((parsed.it[0] as Record<string, unknown>).i).toBeUndefined();
     // leerer Kader bleibt 0
     expect(SquadSchema.parse({ it: [] }).it).toHaveLength(0);
   });

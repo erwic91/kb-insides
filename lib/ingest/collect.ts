@@ -118,20 +118,21 @@ async function collectLeagueWide(
           let sum = 0;
           for (const pl of squad.it) {
             sum += pl.mv ?? 0;
-            if (pl.i == null) continue;
+            if (pl.pi == null) continue;
             squadPlayers.push({
               league_id: leagueId,
-              player_id: pl.i,
+              player_id: pl.pi,
               manager_id: manager.id,
-              points: pl.p ?? null,
-              avg_points: pl.ap ?? null,
+              // Squad-Endpoint liefert keine Punkte → aus anderen Quellen (null hier).
+              points: null,
+              avg_points: null,
               market_value: pl.mv ?? null,
               position: posLabel(pl.pos),
               status: pl.st ?? null,
             });
             squadPlayerMeta.push({
-              id: pl.i,
-              name: pl.n ?? null,
+              id: pl.pi,
+              name: pl.pn ?? null,
               team: pl.tid ?? null,
               position: posLabel(pl.pos),
             });
