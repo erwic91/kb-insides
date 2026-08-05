@@ -93,6 +93,54 @@ export default async function NewsPage({
         )}
       </div>
 
+      {/* Externe Ausfälle — Bundesliga-weit (api-football) */}
+      <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-head">
+          <h3>Bundesliga-Ausfälle (extern)</h3>
+          <span className="count">{news.externalInjuries.length}</span>
+        </div>
+        {news.externalInjuries.length === 0 ? (
+          <div className="notice">
+            Noch keine externen Ausfälle. Quelle ist api-football — sobald ein API-Key
+            hinterlegt ist, erscheinen die Bundesliga-weiten Ausfälle nach dem nächsten
+            Sammel-Lauf.
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th className="l">Spieler</th>
+                  <th className="l">Team</th>
+                  <th className="l">Grund</th>
+                  <th className="l">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {news.externalInjuries.map((x, i) => (
+                  <tr key={`${x.playerName}-${i}`}>
+                    <td className="l">
+                      {x.kbPlayerId ? (
+                        <Link href={href(`/player/${x.kbPlayerId}`)} className="linklike">
+                          {x.playerName}
+                        </Link>
+                      ) : (
+                        x.playerName
+                      )}
+                    </td>
+                    <td className="l muted">{x.teamName ?? "—"}</td>
+                    <td className="l">
+                      <span style={{ color: "var(--warn)" }}>{x.reason ?? "—"}</span>
+                    </td>
+                    <td className="l muted">{x.type ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Marktwert-Bewegungen — eigener Kader */}
       <div className="grid g-2">
         <div className="panel">

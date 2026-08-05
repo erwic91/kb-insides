@@ -832,10 +832,20 @@ export interface MoverNews {
   changePct: number | null;
 }
 
+export interface ExternalInjuryNews {
+  playerName: string;
+  teamName: string | null;
+  type: string | null;
+  reason: string | null;
+  fixtureDate: string | null;
+  kbPlayerId: string | null;
+}
+
 export interface LeagueNews {
   injuries: InjuryNews[];
   risers: MoverNews[];
   fallers: MoverNews[];
+  externalInjuries: ExternalInjuryNews[];
 }
 
 /**
@@ -846,7 +856,7 @@ export interface LeagueNews {
  */
 export async function getLeagueNews(league: LeagueLite): Promise<LeagueNews> {
   const supabase = await getReadClient();
-  if (!supabase) return { injuries: [], risers: [], fallers: [] };
+  if (!supabase) return { injuries: [], risers: [], fallers: [], externalInjuries: [] };
 
   const access = await getMyAccess();
   const myManagerId = access?.kbManagerId ?? null;
@@ -911,7 +921,25 @@ export async function getLeagueNews(league: LeagueLite): Promise<LeagueNews> {
   const risers = movers.filter((m) => m.change > 0).sort((a, b) => b.change - a.change).slice(0, 5);
   const fallers = movers.filter((m) => m.change < 0).sort((a, b) => a.change - b.change).slice(0, 5);
 
-  return { injuries, risers, fallers };
+  // 3) Externe Ausfälle (api-football), global gespeichert. Kickbase-Treffer
+  //    (kb_player_id gesetzt) zuerst — die sind für die Liga am relevantesten.
+  const { data: ext } = await supabase
+    .from("external_injuries")
+    .select("player_name, team_name, type, reason, fixture_date, kb_player_id")
+    .order("fixture_date", { ascending: false })
+    .limit(60);
+  const externalInjuries: ExternalInjuryNews[] = (ext ?? [])
+    .map((r) => ({
+      playerName: (r.player_name as string) ?? "—",
+      teamName: (r.team_name as string) ?? null,
+      type: (r.type as string) ?? null,
+      reason: (r.reason as string) ?? null,
+      fixtureDate: (r.fixture_date as string) ?? null,
+      kbPlayerId: (r.kb_player_id as string) ?? null,
+    }))
+    .sort((a, b) => Number(Boolean(b.kbPlayerId)) - Number(Boolean(a.kbPlayerId)));
+
+  return { injuries, risers, fallers, externalInjuries };
 }
 
 export interface OverpayStat {

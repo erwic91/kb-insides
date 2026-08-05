@@ -46,6 +46,7 @@ import {
   reconcileLeagueAccess,
 } from "../db/connections";
 import type { PlayerRow } from "./market";
+import { syncExternalInjuries } from "./externalNews";
 
 const SQUAD_POS: Record<number, string> = { 1: "TW", 2: "ABW", 3: "MF", 4: "ANG" };
 const posLabel = (pos: number | null | undefined): string | null =>
@@ -374,6 +375,13 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     }
   }
 
+  // Externe Ausfälle (api-football) einmal pro Lauf, mit Freshness-Guard.
+  try {
+    await syncExternalInjuries();
+  } catch {
+    // externe News best-effort.
+  }
+
   return { leagues };
 }
 
@@ -434,6 +442,14 @@ export async function runCollectForUser(
     results.push(r);
     await politeDelay();
   }
+
+  // Externe Ausfälle (api-football) — einmal pro Refresh, Freshness-Guard schützt das Limit.
+  try {
+    await syncExternalInjuries();
+  } catch {
+    // externe News best-effort.
+  }
+
   return results;
 }
 
