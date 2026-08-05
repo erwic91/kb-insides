@@ -796,6 +796,124 @@ export async function getMySquad(league: LeagueLite): Promise<MySquad | null> {
   return { managerId: mid, rows, teamValue, totalProfit };
 }
 
+// ---------- News / Signale ----------
+
+/** Kickbase-Statuscodes → lesbares Label (best-effort, konservativ). */
+const STATUS_LABELS: Record<number, string> = {
+  1: "Verletzt",
+  2: "Angeschlagen",
+  4: "Aufbautraining",
+  8: "Gesperrt",
+  16: "Gelb-gesperrt",
+  32: "Nicht im Kader",
+};
+export function statusLabel(status: number | null): string {
+  if (status == null || status === 0) return "Fit";
+  return STATUS_LABELS[status] ?? "Ausfall/fraglich";
+}
+
+export interface InjuryNews {
+  playerId: string;
+  name: string;
+  position: string | null;
+  team: string | null;
+  status: number;
+  label: string;
+  managerId: string;
+  managerName: string;
+  isMine: boolean;
+}
+
+export interface MoverNews {
+  playerId: string;
+  name: string;
+  marketValue: number | null;
+  change: number;
+  changePct: number | null;
+}
+
+export interface LeagueNews {
+  injuries: InjuryNews[];
+  risers: MoverNews[];
+  fallers: MoverNews[];
+}
+
+/**
+ * Kickbase-interne Signale für die News-Seite:
+ *  - Verletzungen/Ausfälle liga-weit (squad_players.status > 0),
+ *  - eigene Marktwert-Gewinner/-Verlierer seit gestern (aus der MV-Historie).
+ * Externe Quellen (Transfermarkt, Ligainsider, …) folgen separat.
+ */
+export async function getLeagueNews(league: LeagueLite): Promise<LeagueNews> {
+  const supabase = await getReadClient();
+  if (!supabase) return { injuries: [], risers: [], fallers: [] };
+
+  const access = await getMyAccess();
+  const myManagerId = access?.kbManagerId ?? null;
+
+  // 1) Ausfälle liga-weit: Kaderspieler mit status > 0.
+  const { data: hurt } = await supabase
+    .from("squad_players")
+    .select("player_id, manager_id, status")
+    .eq("league_id", league.id)
+    .gt("status", 0);
+
+  const rows = hurt ?? [];
+  const pids = [...new Set(rows.map((r) => r.player_id as string))];
+  const mids = [...new Set(rows.map((r) => r.manager_id as string))];
+
+  const pmap = new Map<string, { name?: string; position?: string; team?: string }>();
+  if (pids.length > 0) {
+    const { data } = await supabase.from("players").select("id, name, position, team").in("id", pids);
+    for (const p of data ?? [])
+      pmap.set(p.id as string, {
+        name: p.name as string,
+        position: p.position as string,
+        team: p.team as string,
+      });
+  }
+  const nmap = new Map<string, string>();
+  if (mids.length > 0) {
+    const { data } = await supabase.from("managers").select("id, name").eq("league_id", league.id).in("id", mids);
+    for (const m of data ?? []) nmap.set(m.id as string, m.name as string);
+  }
+
+  const injuries: InjuryNews[] = rows
+    .map((r) => {
+      const pid = r.player_id as string;
+      const mid = r.manager_id as string;
+      const status = (r.status as number) ?? 0;
+      return {
+        playerId: pid,
+        name: pmap.get(pid)?.name ?? `#${pid}`,
+        position: pmap.get(pid)?.position ?? null,
+        team: pmap.get(pid)?.team ?? null,
+        status,
+        label: statusLabel(status),
+        managerId: mid,
+        managerName: nmap.get(mid) ?? mid,
+        isMine: myManagerId != null && mid === myManagerId,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // 2) Eigene Marktwert-Bewegungen seit gestern.
+  const squad = await getMySquad(league);
+  const movers = (squad?.rows ?? [])
+    .filter((p) => p.mvChangeDay != null && p.mvChangeDay !== 0)
+    .map((p) => ({
+      playerId: p.playerId,
+      name: p.name,
+      marketValue: p.marketValue,
+      change: p.mvChangeDay as number,
+      changePct: p.mvChangeDayPct,
+    }));
+  const risers = movers.filter((m) => m.change > 0).sort((a, b) => b.change - a.change).slice(0, 5);
+  const fallers = movers.filter((m) => m.change < 0).sort((a, b) => a.change - b.change).slice(0, 5);
+
+  return { injuries, risers, fallers };
+}
+
 export interface OverpayStat {
   /** Ø Overpay je Kauf (Kaufpreis − Marktwert am Kauftag). */
   avg: number | null;
