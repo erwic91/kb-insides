@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { eur } from "../lib/format";
 
@@ -30,10 +30,10 @@ export interface LeagueSettingsValues {
 }
 
 /**
- * Per-Liga-Einstellungen: Liga-Typ (200 Mio/Nullspieler vs. 50 Mio/zugeloste
- * Spieler), Start-Zeitpunkt, Start-Budget, Historie ein/aus, Bonusmodell.
- * Speichert über /api/league/settings — per Session authentifiziert (jedes
- * verbundene Mitglied der Liga darf ändern).
+ * Per-Liga-Einstellungen als Zahnrad-Icon (selten gebraucht → aus dem Weg).
+ * Klick öffnet einen Modal-Dialog mit Liga-Typ, Start-Budget, Startzeitpunkt,
+ * Historie und Bonusmodell. Speichert über /api/league/settings (per Session
+ * authentifiziert; jedes verbundene Mitglied der Liga darf ändern).
  */
 export default function LeagueSettings({
   leagueId,
@@ -55,6 +55,16 @@ export default function LeagueSettings({
   const [useStart, setUseStart] = useState<boolean>(current.trackingSince != null);
   const [includeHistory, setIncludeHistory] = useState<boolean>(current.includeHistory);
   const [bonusMode, setBonusMode] = useState<string>(current.bonusMode);
+
+  // Escape schließt den Dialog (außer während des Speicherns).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, busy]);
 
   function pickType(gm: number) {
     setGameMode(gm);
@@ -97,88 +107,101 @@ export default function LeagueSettings({
   const typeLabel = (current.gameMode ?? 2) === 2 ? "200 Mio · Nullspieler" : "50 Mio · zugeloste Spieler";
 
   return (
-    <div className="panel" style={{ marginBottom: 20 }}>
-      <div className="panel-head">
-        <h3>Liga-Einstellungen</h3>
-        <button className="btn" onClick={() => setOpen((o) => !o)} disabled={busy}>
-          {open ? "Abbrechen" : "Bearbeiten"}
-        </button>
-      </div>
+    <>
+      <button
+        className="icon-btn"
+        title="Liga-Einstellungen"
+        aria-label="Liga-Einstellungen"
+        onClick={() => setOpen(true)}
+        disabled={busy}
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
 
-      {!open ? (
-        <div style={{ padding: "12px 18px", fontSize: 13, display: "flex", gap: 20, flexWrap: "wrap" }}>
-          <span>
-            <b>Typ:</b> {typeLabel}
-          </span>
-          <span>
-            <b>Start-Budget:</b> {eur(current.startBudget)}
-          </span>
-          <span>
-            <b>Start:</b> {fmtDate(current.trackingSince)}
-          </span>
-          <span>
-            <b>Historie:</b> {current.includeHistory ? "einbezogen" : "ab Start"}
-          </span>
-          <span>
-            <b>Bonus:</b> {current.bonusMode === "lockin" ? "nur Lock-In" : "Spieltagsboni"}
-          </span>
-        </div>
-      ) : (
-        <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 16, fontSize: 13 }}>
-          <Field label="Liga-Typ">
-            <Radio checked={gameMode === 2} onChange={() => pickType(2)} label="200 Mio · Nullspieler (Manager)" />
-            <Radio checked={gameMode === 1} onChange={() => pickType(1)} label="50 Mio · zugeloste Spieler (Classic)" />
-          </Field>
+      {open && (
+        <div className="modal-overlay" onClick={() => !busy && setOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-head">
+              <h3>Liga-Einstellungen</h3>
+              <button className="modal-close" aria-label="Schließen" onClick={() => setOpen(false)} disabled={busy}>
+                ×
+              </button>
+            </div>
 
-          <Field label="Start-Budget (Mio €)">
-            <input
-              type="number"
-              value={budgetMio}
-              onChange={(e) => setBudgetMio(e.target.value)}
-              style={inputStyle}
-              min={0}
-            />
-          </Field>
+            <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 16, fontSize: 13 }}>
+              <div className="note" style={{ color: "var(--mute)" }}>
+                Aktuell: {typeLabel} · Start-Budget {eur(current.startBudget)} · Start {fmtDate(current.trackingSince)}
+              </div>
 
-          <Field label="Historische Daten">
-            <Radio checked={includeHistory} onChange={() => setIncludeHistory(true)} label="Einbeziehen (gesamte verfügbare Historie)" />
-            <Radio checked={!includeHistory} onChange={() => setIncludeHistory(false)} label="Ab Startzeitpunkt (Ältere ignorieren & entfernen)" />
-          </Field>
+              <Field label="Liga-Typ">
+                <Radio checked={gameMode === 2} onChange={() => pickType(2)} label="200 Mio · Nullspieler (Manager)" />
+                <Radio checked={gameMode === 1} onChange={() => pickType(1)} label="50 Mio · zugeloste Spieler (Classic)" />
+              </Field>
 
-          <Field label="Liga-Start / Startzeitpunkt">
-            <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
-              <input type="checkbox" checked={useStart} onChange={(e) => setUseStart(e.target.checked)} />
-              Startzeitpunkt setzen
-            </label>
-            {useStart && (
-              <input
-                type="datetime-local"
-                value={since}
-                onChange={(e) => setSince(e.target.value)}
-                style={inputStyle}
-              />
-            )}
-          </Field>
+              <Field label="Start-Budget (Mio €)">
+                <input
+                  type="number"
+                  value={budgetMio}
+                  onChange={(e) => setBudgetMio(e.target.value)}
+                  style={inputStyle}
+                  min={0}
+                />
+              </Field>
 
-          <Field label="Bonusmodell">
-            <Radio checked={bonusMode === "matchday"} onChange={() => setBonusMode("matchday")} label="Spieltagsboni" />
-            <Radio checked={bonusMode === "lockin"} onChange={() => setBonusMode("lockin")} label="Nur Lock-In-Bonus" />
-          </Field>
+              <Field label="Historische Daten">
+                <Radio checked={includeHistory} onChange={() => setIncludeHistory(true)} label="Einbeziehen (gesamte verfügbare Historie)" />
+                <Radio checked={!includeHistory} onChange={() => setIncludeHistory(false)} label="Ab Startzeitpunkt (Ältere ignorieren & entfernen)" />
+              </Field>
 
-          <div>
-            <button className="btn" onClick={save} disabled={busy}>
-              Speichern
-            </button>
+              <Field label="Liga-Start / Startzeitpunkt">
+                <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+                  <input type="checkbox" checked={useStart} onChange={(e) => setUseStart(e.target.checked)} />
+                  Startzeitpunkt setzen
+                </label>
+                {useStart && (
+                  <input
+                    type="datetime-local"
+                    value={since}
+                    onChange={(e) => setSince(e.target.value)}
+                    style={inputStyle}
+                  />
+                )}
+              </Field>
+
+              <Field label="Bonusmodell">
+                <Radio checked={bonusMode === "matchday"} onChange={() => setBonusMode("matchday")} label="Spieltagsboni" />
+                <Radio checked={bonusMode === "lockin"} onChange={() => setBonusMode("lockin")} label="Nur Lock-In-Bonus" />
+              </Field>
+
+              <div>
+                <button className="btn" onClick={save} disabled={busy}>
+                  Speichern
+                </button>
+              </div>
+
+              {msg && (
+                <div className="note" style={{ color: "var(--ink-soft)" }}>
+                  {msg}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
-
-      {msg && (
-        <div className="note" style={{ padding: "0 18px 12px", color: "var(--ink-soft)" }}>
-          {msg}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 

@@ -15,7 +15,7 @@ import InfoDot from "../components/InfoDot";
 import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
 import SquadTable from "../components/SquadTable";
-import { MeinStanding, SpielerLandschaft, Formkurve } from "../components/Insights";
+import { SpielerLandschaft, Formkurve } from "../components/Insights";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -110,19 +110,31 @@ export default async function DashboardPage({
             {myRank > 0 ? ` · du bist Rang ${myRank} von ${active.length}` : ""}
           </div>
         </div>
-        <RefreshButton leagueId={league.id} />
+        <div className="head-actions">
+          <LeagueSettings
+            leagueId={league.id}
+            current={{
+              gameMode: league.gameMode,
+              startBudget: league.startBudget,
+              trackingSince: league.trackingSince,
+              includeHistory: league.includeHistory,
+              bonusMode: league.bonusMode,
+            }}
+          />
+          <RefreshButton leagueId={league.id} />
+        </div>
       </div>
 
-      <LeagueSettings
-        leagueId={league.id}
-        current={{
-          gameMode: league.gameMode,
-          startBudget: league.startBudget,
-          trackingSince: league.trackingSince,
-          includeHistory: league.includeHistory,
-          bonusMode: league.bonusMode,
-        }}
-      />
+      <div className="section">
+        <div className="section-head">
+          <h2>
+            Alle Manager
+            <InfoDot text="Alle Manager der Liga. Kaderwert, Punkte, Spieler & Aktivität kommen direkt aus Kickbase. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Spaltenköpfe haben eigene Erklärungen." />
+          </h2>
+          <span className="note">Spaltenkopf klicken zum Sortieren</span>
+        </div>
+        <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
+      </div>
 
       {showMoney && calibration && (
         <div className={`notice ${calibration.delta === 0 ? "" : "warn"}`}>
@@ -218,8 +230,6 @@ export default async function DashboardPage({
         )}
       </div>
 
-      <MeinStanding rows={rows} showMoney={showMoney} leagueId={league.id} />
-
       <div className="section">
         <div className="section-head">
           <h2>
@@ -237,17 +247,6 @@ export default async function DashboardPage({
         ) : (
           <div className="notice">Kein eigener Kader gefunden.</div>
         )}
-      </div>
-
-      <div className="section">
-        <div className="section-head">
-          <h2>
-            Alle Manager
-            <InfoDot text="Alle Manager der Liga. Kaderwert, Punkte, Spieler & Aktivität kommen direkt aus Kickbase. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Spaltenköpfe haben eigene Erklärungen." />
-          </h2>
-          <span className="note">Spaltenkopf klicken zum Sortieren</span>
-        </div>
-        <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
       </div>
 
       <div className="g-2">

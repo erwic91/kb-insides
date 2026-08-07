@@ -5,7 +5,6 @@ import InfoDot from "./InfoDot";
 
 /**
  * Dashboard-Einblicke (Server-Komponenten, keine Interaktivität):
- *   MeinStanding    — Rang, Abstände, Max-Gebot-/Liquiditäts-Rang
  *   BedrohungsRadar — wer kann mich am Markt überbieten (Konto + Max-Gebot)
  *   SpielerLandschaft — Verteilung der Top-Spieler + eigene Top-Assets
  *   Formkurve       — Spieltagspunkte-Serie je Manager als Sparkline
@@ -14,106 +13,6 @@ import InfoDot from "./InfoDot";
 
 function href(base: string, leagueId: string): string {
   return `${base}?league=${encodeURIComponent(leagueId)}`;
-}
-
-// ---------- Mein Standing ----------
-
-export function MeinStanding({
-  rows,
-  showMoney,
-  leagueId,
-}: {
-  rows: ManagerTableRow[];
-  showMoney: boolean;
-  leagueId: string;
-}) {
-  const active = rows.filter((r) => r.active);
-  const me = rows.find((r) => r.isMe);
-  if (!me || active.length < 2) return null;
-
-  const metric = (r: ManagerTableRow) =>
-    showMoney ? (r.total ?? Number.NEGATIVE_INFINITY) : (r.points ?? Number.NEGATIVE_INFINITY);
-  const fmt = (n: number | null) => (n == null ? "—" : showMoney ? eur(n) : num(n));
-
-  const ranked = [...active].sort((a, b) => metric(b) - metric(a));
-  const myRank = ranked.findIndex((r) => r.id === me.id) + 1;
-  const above = myRank > 1 ? ranked[myRank - 2] : null;
-  const below = myRank < ranked.length ? ranked[myRank] : null;
-  const leader = ranked[0];
-  const gapAbove = above ? metric(above) - metric(me) : null;
-  const gapBelow = below ? metric(me) - metric(below) : null;
-  const gapLeader = leader && leader.id !== me.id ? metric(leader) - metric(me) : null;
-
-  const rankBy = (sel: (r: ManagerTableRow) => number | null) => {
-    const arr = active.filter((r) => sel(r) != null).sort((a, b) => (sel(b) ?? 0) - (sel(a) ?? 0));
-    const i = arr.findIndex((r) => r.id === me.id);
-    return i >= 0 ? { rank: i + 1, of: arr.length } : null;
-  };
-  const maxBidRank = showMoney ? rankBy((r) => r.maxBid) : null;
-  const liqRank = showMoney ? rankBy((r) => r.liquidity) : null;
-
-  return (
-    <div className="panel">
-      <div className="panel-head">
-        <h3>
-          Mein Standing
-          <InfoDot text="Dein Rang und die Abstände nach oben, nach unten und zum Führenden — in Budget-Ligen nach Gesamtwert (Konto + Kaderwert), sonst nach Punkten. Dazu dein Rang beim Maximalgebot und bei der Liquidität." />
-        </h3>
-        <span className="count">
-          Rang {myRank} / {active.length}
-        </span>
-      </div>
-      <div className="stand-grid">
-        <div className="stand-cell">
-          <div className="label">Nach oben</div>
-          <div className="value xs">{above ? fmt(gapAbove) : "Spitze"}</div>
-          <div className="hint">{above ? above.name : "du führst"}</div>
-        </div>
-        <div className="stand-cell">
-          <div className="label">Nach unten</div>
-          <div className="value xs">{below ? fmt(gapBelow) : "Schlusslicht"}</div>
-          <div className="hint">{below ? below.name : "niemand dahinter"}</div>
-        </div>
-        <div className="stand-cell">
-          <div className="label">Zum Führenden</div>
-          <div className="value xs">{gapLeader == null ? "—" : fmt(gapLeader)}</div>
-          <div className="hint">{gapLeader == null ? "das bist du" : leader!.name}</div>
-        </div>
-        {showMoney && (
-          <>
-            <div className="stand-cell">
-              <div className="label">Max-Gebot-Rang</div>
-              <div className="value xs">
-                {maxBidRank ? `${maxBidRank.rank} / ${maxBidRank.of}` : "—"}
-              </div>
-              <div className="hint" title={eurFull(me.maxBid)}>
-                {me.maxBid != null ? eur(me.maxBid) : "kein Gebot"}
-              </div>
-            </div>
-            <div className="stand-cell">
-              <div className="label">Liquiditäts-Rang</div>
-              <div className="value xs">
-                {liqRank ? `${liqRank.rank} / ${liqRank.of}` : "—"}
-              </div>
-              <div className="hint">{me.liquidity != null ? `${pct(me.liquidity)} liquide` : "—"}</div>
-            </div>
-            <div className="stand-cell">
-              <div className="label">Gesamtwert</div>
-              <div className="value xs" title={eurFull(me.total)}>
-                {eur(me.total)}
-              </div>
-              <div className="hint">Konto + Kaderwert</div>
-            </div>
-          </>
-        )}
-      </div>
-      <div className="panel-foot">
-        <Link href={href("/liga", leagueId)} className="linklike">
-          Ganze Rangliste →
-        </Link>
-      </div>
-    </div>
-  );
 }
 
 // ---------- Bedrohungs-Radar ----------
