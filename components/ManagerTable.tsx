@@ -163,7 +163,11 @@ export default function ManagerTable({
               {cols.map((c) => {
                 const raw = r[c.key];
                 const exact = EURO_KEYS.has(c.key) && raw != null ? eurFull(raw) : undefined;
-                const delta = c.key === "teamValue" ? r.teamValueDeltaPct : null;
+                // Delta nur zeigen, wenn es nicht auf 0,0 % rundet — ein „+0,0 %"
+                // (z. B. kein neues Marktwert-Update seit dem letzten Snapshot)
+                // wirkt wie ein Fehler und wird daher weggelassen.
+                const rawDelta = c.key === "teamValue" ? r.teamValueDeltaPct : null;
+                const delta = rawDelta != null && Math.abs(rawDelta) * 100 >= 0.05 ? rawDelta : null;
                 return (
                   <td
                     key={c.key}

@@ -86,6 +86,7 @@ export interface LeagueIngestResult {
 async function collectLeagueWide(
   leagueId: string,
   token: string,
+  opts: { recordDailyTv?: boolean } = {},
 ): Promise<LeagueIngestResult> {
   try {
     // M2 — Ranking.
@@ -178,16 +179,22 @@ async function collectLeagueWide(
     await replaceSquadPlayers(leagueId, squadPlayers);
 
     // Täglicher Kaderwert je Manager (für den „Veränderung zum Vortag"-Trend).
-    const snapDate = new Date().toISOString().slice(0, 10);
-    const tvDaily: ManagerTvDailyRow[] = rows.snapshots
-      .filter((s) => s.team_value != null)
-      .map((s) => ({
-        league_id: leagueId,
-        manager_id: s.manager_id,
-        snap_date: snapDate,
-        team_value: s.team_value,
-      }));
-    if (tvDaily.length > 0) await upsertManagerTvDaily(tvDaily);
+    // NUR im nächtlichen Cron schreiben (läuft nach dem täglichen Kickbase-MV-
+    // Update). Ein manueller Refresh am Vormittag würde den heutigen Tageseimer
+    // sonst mit dem Marktwert-Stand von GESTERN (vor dem Update) befüllen — das
+    // erzeugt ein irreführendes „0 %" gegenüber dem gestrigen Abend-Snapshot.
+    if (opts.recordDailyTv) {
+      const snapDate = new Date().toISOString().slice(0, 10);
+      const tvDaily: ManagerTvDailyRow[] = rows.snapshots
+        .filter((s) => s.team_value != null)
+        .map((s) => ({
+          league_id: leagueId,
+          manager_id: s.manager_id,
+          snap_date: snapDate,
+          team_value: s.team_value,
+        }));
+      if (tvDaily.length > 0) await upsertManagerTvDaily(tvDaily);
+    }
     await politeDelay();
 
     // M6 — Markt.
@@ -347,7 +354,8 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
   const leagues: LeagueIngestResult[] = [];
   const leagueDay = new Map<string, number | null>();
   for (const [leagueId, token] of leagueToken) {
-    const r = await collectLeagueWide(leagueId, token);
+    // Nächtlicher Cron → Tages-Snapshot des Kaderwerts schreiben.
+    const r = await collectLeagueWide(leagueId, token, { recordDailyTv: true });
     leagueDay.set(leagueId, r.day ?? null);
     leagues.push(r);
     await politeDelay();
@@ -493,7 +501,8 @@ async function runCollectLegacy(): Promise<{ leagues: LeagueIngestResult[] }> {
 
   const leagues: LeagueIngestResult[] = [];
   for (const leagueId of leagueIds) {
-    const r = await collectLeagueWide(leagueId, token);
+    // Legacy-Pfad ist der env-basierte Cron → Tages-Snapshot schreiben.
+    const r = await collectLeagueWide(leagueId, token, { recordDailyTv: true });
     // Legacy: is_me + eigene Kalibrierung (env-Operator).
     if (!r.error && ownId) {
       try {
