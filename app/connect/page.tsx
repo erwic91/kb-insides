@@ -58,32 +58,34 @@ export default async function ConnectPage({
   }
 
   const state = await getConnectionState(user.id);
+  const needsReconnect = state != null && state.status !== "active";
 
   let leagues: { id: string; name: string }[] = [];
   let loadError = false;
   let userLeagues: { leagueId: string; activatedAt: string | null }[] = [];
   let maxLeagues = 1;
-  if (state && state.status === "active") {
-    try {
-      const [tokens, ul, ml] = await Promise.all([
-        getDecryptedTokens(user.id),
-        getUserLeagues(user.id),
-        getMaxLeagues(user.id),
-      ]);
-      userLeagues = ul;
-      maxLeagues = ml;
-      if (tokens) {
-        const sel = await fetchLeaguesSelection({ token: tokens.accessToken });
-        leagues = parseLeaguesSelection(sel).map((l) => ({ id: l.id, name: l.name }));
-        // In Kickbase verlassene Ligen aus league_access entfernen (Abgleich).
-        // Nur bei nicht-leerer Auswahl (leere Liste = eher API-Hiccup als „alle verlassen").
-        if (leagues.length > 0) {
-          const removed = await reconcileLeagueAccess(user.id, leagues.map((l) => l.id));
-          if (removed.length > 0) userLeagues = await getUserLeagues(user.id);
+  if (state) {
+    // league_access + Limit brauchen KEIN gültiges Token → immer laden, damit
+    // auch bei abgelaufener Sitzung die aktiven Ligen des Nutzers sichtbar sind.
+    const [ul, ml] = await Promise.all([getUserLeagues(user.id), getMaxLeagues(user.id)]);
+    userLeagues = ul;
+    maxLeagues = ml;
+    if (state.status === "active") {
+      try {
+        const tokens = await getDecryptedTokens(user.id);
+        if (tokens) {
+          const sel = await fetchLeaguesSelection({ token: tokens.accessToken });
+          leagues = parseLeaguesSelection(sel).map((l) => ({ id: l.id, name: l.name }));
+          // In Kickbase verlassene Ligen aus league_access entfernen (Abgleich).
+          // Nur bei nicht-leerer Auswahl (leere Liste = eher API-Hiccup als „alle verlassen").
+          if (leagues.length > 0) {
+            const removed = await reconcileLeagueAccess(user.id, leagues.map((l) => l.id));
+            if (removed.length > 0) userLeagues = await getUserLeagues(user.id);
+          }
         }
+      } catch {
+        loadError = true;
       }
-    } catch {
-      loadError = true;
     }
   }
 
@@ -121,7 +123,7 @@ export default async function ConnectPage({
           <div className="card card-pad" style={{ marginBottom: 20 }}>
             <p className="card-title">Verbindung</p>
             <p>
-              Kickbase-Konto verbunden{state.status !== "active" ? " (bitte neu verbinden)" : ""}.{" "}
+              Kickbase-Konto verbunden{needsReconnect ? " (Sitzung abgelaufen — bitte neu verbinden)" : ""}.{" "}
               <strong>
                 {activeCount} von {maxLeagues} {maxLeagues === 1 ? "Liga" : "Ligen"} aktiv
               </strong>
@@ -131,12 +133,26 @@ export default async function ConnectPage({
               <form action={disconnectKickbase}>
                 <button className="btn" type="submit">Kickbase trennen</button>
               </form>
-              {activeCount > 0 && (
+              {!needsReconnect && activeCount > 0 && (
                 <Link href="/" className="linklike">Zum Dashboard →</Link>
               )}
             </div>
           </div>
 
+          {needsReconnect ? (
+            <div className="card card-pad" style={{ maxWidth: 520, marginBottom: 20 }}>
+              <p className="card-title">Neu verbinden</p>
+              <div className="notice warn" style={{ marginBottom: 12 }}>
+                Deine Kickbase-Sitzung ist abgelaufen — das gespeicherte Token lässt sich nicht
+                erneuern (u. a. wenn du dich in der Kickbase-App neu einloggst). Bitte melde dich
+                erneut an.
+                {activeCount > 0
+                  ? ` Deine ${activeCount} aktive${activeCount === 1 ? " Liga bleibt" : "n Ligen bleiben"} erhalten.`
+                  : ""}
+              </div>
+              <ReconnectForm />
+            </div>
+          ) : (
           <section className="section">
             <div className="section-head">
               <h2>Ligen</h2>
@@ -214,9 +230,34 @@ export default async function ConnectPage({
               </p>
             )}
           </section>
+          )}
         </>
       )}
     </main>
+  );
+}
+
+/** Nur die Zugangsdaten-Felder (Login) — für die Neu-Verbinden-Card. */
+function ReconnectForm() {
+  return (
+    <form action={connectKickbase} style={{ display: "grid", gap: 12 }}>
+      <input type="email" name="kbEmail" required placeholder="Kickbase-E-Mail" style={inputStyle} />
+      <input
+        type="password"
+        name="kbPassword"
+        required
+        placeholder="Kickbase-Passwort"
+        style={inputStyle}
+      />
+      <label style={{ display: "flex", gap: 8, fontSize: 13, alignItems: "flex-start" }}>
+        <input type="checkbox" name="consent" value="1" required style={{ marginTop: 3 }} />
+        <span>
+          Ich verbinde meinen Kickbase-Account erneut. Es wird ein neues Token (verschlüsselt)
+          gespeichert, nicht mein Passwort.
+        </span>
+      </label>
+      <button className="btn" type="submit">Neu verbinden</button>
+    </form>
   );
 }
 
