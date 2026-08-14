@@ -102,6 +102,26 @@ export async function getMyAccess(): Promise<MyAccess | null> {
   return { leagueId: data.league_id as string, kbManagerId: data.kb_manager_id as string };
 }
 
+/** Global (liga-übergreifend) ausgeblendete Manager-IDs (hidden_managers). */
+export async function getHiddenManagerIds(): Promise<Set<string>> {
+  const supabase = await getReadClient();
+  if (!supabase) return new Set();
+  const { data } = await supabase.from("hidden_managers").select("manager_id");
+  return new Set((data ?? []).map((r) => r.manager_id as string));
+}
+
+/** Ist dieser Manager global ausgeblendet? */
+export async function isManagerHidden(managerId: string): Promise<boolean> {
+  const supabase = await getReadClient();
+  if (!supabase) return false;
+  const { data } = await supabase
+    .from("hidden_managers")
+    .select("manager_id")
+    .eq("manager_id", managerId)
+    .maybeSingle();
+  return data != null;
+}
+
 /**
  * Kaderwert-Veränderung zum Vortag je Manager (in %). Aus manager_tv_daily:
  * die zwei jüngsten Kalendertage vergleichen. Null, solange < 2 Tage vorliegen.
@@ -240,25 +260,32 @@ async function getTransfersByManager(
   return byManager;
 }
 
+export interface HiddenManagerLite {
+  id: string;
+  name: string;
+}
+
 export interface ManagerTable {
   day: number | null;
   rows: ManagerTableRow[];
+  /** Global ausgeblendete Manager dieser Liga (aus rows entfernt) — für die Wiederherstellungs-Liste. */
+  hidden: HiddenManagerLite[];
 }
 
 export async function getManagerTable(
   league: LeagueLite,
 ): Promise<ManagerTable> {
   const supabase = await getReadClient();
-  if (!supabase) return { day: null, rows: [] };
+  if (!supabase) return { day: null, rows: [], hidden: [] };
   const day = await getLatestDay(league.id);
-  if (day == null) return { day: null, rows: [] };
+  if (day == null) return { day: null, rows: [], hidden: [] };
 
   const { data, error } = await supabase
     .from("manager_snapshots")
     .select("manager_id, team_value, points, streak, squad_size, points_series")
     .eq("league_id", league.id)
     .eq("day", day);
-  if (error || !data) return { day, rows: [] };
+  if (error || !data) return { day, rows: [], hidden: [] };
 
   // Manager separat laden und im Code mergen (robuster als PostgREST-Embed
   // über den zusammengesetzten FK).
@@ -274,11 +301,12 @@ export async function getManagerTable(
   const transfers = await getTransfersByManager(league.id);
   // „Ich" + exakter Kontostand kommen jetzt pro Nutzer aus league_access /
   // user_budget (nicht mehr aus managers.is_me / snapshots.cash_actual).
-  const [myAccess, myBudget, adjustments, tvDeltas] = await Promise.all([
+  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds] = await Promise.all([
     getMyAccess(),
     getMyBudget(league.id),
     getAdjustmentSums(league.id),
     getTeamValueDeltas(league.id),
+    getHiddenManagerIds(),
   ]);
   const myCashActual = myBudget.get(day) ?? null;
   const now = Date.now();
@@ -355,13 +383,25 @@ export async function getManagerTable(
     };
   });
 
+  // Global ausgeblendete Manager (z. B. nicht mitspielende Admins) aus der
+  // Auswertung entfernen — dadurch fallen sie automatisch aus Ranking, Ø-Werten
+  // und allen Insights, die auf `rows` aufbauen. Für die Wiederherstellung
+  // werden sie separat als `hidden` zurückgegeben.
+  const hidden: HiddenManagerLite[] = [];
+  const visible = rows.filter((r) => {
+    if (!hiddenIds.has(r.id)) return true;
+    hidden.push({ id: r.id, name: r.name });
+    return false;
+  });
+
   // Sortierung: aktive nach Saisonpunkten, inaktive ans Ende.
-  rows.sort((a, b) => {
+  visible.sort((a, b) => {
     if (a.active !== b.active) return a.active ? -1 : 1;
     return (b.points ?? -1) - (a.points ?? -1);
   });
 
-  return { day, rows };
+  hidden.sort((a, b) => a.name.localeCompare(b.name));
+  return { day, rows: visible, hidden };
 }
 
 export interface ManagerDetail {

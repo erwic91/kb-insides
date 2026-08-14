@@ -16,6 +16,7 @@ import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
 import SquadTable from "../components/SquadTable";
 import { SpielerLandschaft, Formkurve } from "../components/Insights";
+import { setHiddenManager } from "./manager/[id]/actions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -56,7 +57,7 @@ export default async function DashboardPage({
     );
   }
 
-  const { day, rows } = await getManagerTable(league);
+  const { day, rows, hidden } = await getManagerTable(league);
   const [calibration, landscape, squad] = await Promise.all([
     getCalibration(league),
     getSquadLandscape(league),
@@ -134,6 +135,22 @@ export default async function DashboardPage({
           <span className="note">Spaltenkopf klicken zum Sortieren</span>
         </div>
         <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
+        {hidden.length > 0 && (
+          <div className="note" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+            <span className="muted">Ausgeblendet:</span>
+            {hidden.map((h) => (
+              <form key={h.id} action={setHiddenManager} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input type="hidden" name="managerId" value={h.id} />
+                <input type="hidden" name="hidden" value="0" />
+                <input type="hidden" name="redirectTo" value={`/?league=${encodeURIComponent(league.id)}`} />
+                <Link href={`/manager/${h.id}?league=${encodeURIComponent(league.id)}`} className="linklike">{h.name}</Link>
+                <button className="btn" type="submit" style={{ padding: "2px 8px", fontSize: 11 }}>
+                  einblenden
+                </button>
+              </form>
+            ))}
+          </div>
+        )}
       </div>
 
       {showMoney && calibration && (

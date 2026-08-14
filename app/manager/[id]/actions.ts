@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "../../../lib/supabase/server";
 import { userHasLeagueAccess } from "../../../lib/db/connections";
 import { addAdjustment, deleteAdjustment } from "../../../lib/db/adjustments";
+import { setManagerHidden } from "../../../lib/db/hiddenManagers";
 
 /**
  * Server-Actions für manuelle Kontostand-Korrekturen (Strafen/Boni) eines
@@ -43,4 +44,20 @@ export async function removeManagerAdjustment(formData: FormData): Promise<void>
 
   await deleteAdjustment(id, leagueId);
   back(managerId, leagueId, "&ok=removed");
+}
+
+/**
+ * Manager global aus-/einblenden (liga-übergreifend). Für nicht mitspielende
+ * Admins/„Karteileichen": raus aus Ranking, Ø-Werten und Insights. Login genügt
+ * (globale Einstellung der Umgebung). `redirectTo` muss ein relativer Pfad sein.
+ */
+export async function setHiddenManager(formData: FormData): Promise<void> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  const managerId = String(formData.get("managerId") ?? "").trim();
+  if (!managerId) redirect("/");
+  const hidden = String(formData.get("hidden") ?? "") === "1";
+  await setManagerHidden(managerId, hidden);
+  const to = String(formData.get("redirectTo") ?? "").trim();
+  redirect(to.startsWith("/") ? to : "/");
 }

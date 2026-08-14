@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { resolveLeague, getManagerDetail } from "../../../lib/db/queries";
+import { resolveLeague, getManagerDetail, isManagerHidden } from "../../../lib/db/queries";
 import { getAdjustments } from "../../../lib/db/adjustments";
-import { addManagerAdjustment, removeManagerAdjustment } from "./actions";
+import { addManagerAdjustment, removeManagerAdjustment, setHiddenManager } from "./actions";
 import { eur, eurFull, eurSigned, num, pct, date } from "../../../lib/format";
 import type { CSSProperties } from "react";
 
@@ -62,7 +62,10 @@ export default async function ManagerPage({
   }
 
   const net = m.sold - m.bought;
-  const adjustments = await getAdjustments(league.id, id);
+  const [adjustments, hidden] = await Promise.all([
+    getAdjustments(league.id, id),
+    isManagerHidden(id),
+  ]);
   const OKS: Record<string, string> = { added: "Korrektur gespeichert.", removed: "Korrektur entfernt." };
   const ERRS: Record<string, string> = {
     access: "Keine Berechtigung für diese Liga.",
@@ -75,12 +78,13 @@ export default async function ManagerPage({
         <Link href={leagueHref("/", league.id)}>Dashboard</Link> ·{" "}
         <Link href={leagueHref("/liga", league.id)}>{league.name}</Link>
       </div>
-      <div className="page-head">
+      <div className="page-head" style={{ justifyContent: "space-between" }}>
         <div>
           <span className="eyebrow">Manager-Dossier</span>
           <h1>
             {m.name}{" "}
             {m.isMe && <span className="badge me">du</span>}{" "}
+            {hidden && <span className="badge inactive">ausgeblendet</span>}{" "}
             {m.teamValue == null && m.points == null && (
               <span className="badge inactive">inaktiv</span>
             )}
@@ -90,7 +94,24 @@ export default async function ManagerPage({
             {m.day != null ? ` · Spieltag ${m.day}` : ""}
           </p>
         </div>
+        {!m.isMe && (
+          <form action={setHiddenManager}>
+            <input type="hidden" name="managerId" value={id} />
+            <input type="hidden" name="hidden" value={hidden ? "0" : "1"} />
+            <input type="hidden" name="redirectTo" value={leagueHref(`/manager/${id}`, league.id)} />
+            <button className="btn" type="submit">
+              {hidden ? "Wieder einblenden" : "Aus Auswertung ausblenden"}
+            </button>
+          </form>
+        )}
       </div>
+
+      {hidden && (
+        <div className="notice" style={{ marginBottom: 16 }}>
+          Dieser Manager ist global ausgeblendet — er erscheint in keiner Liga in Ranking,
+          Ø-Werten oder Insights. Seine Daten werden weiter gesammelt.
+        </div>
+      )}
 
       <div className="grid grid-4">
         <div className="card card-pad tile">
