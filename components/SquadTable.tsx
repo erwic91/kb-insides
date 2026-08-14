@@ -30,7 +30,7 @@ export default function SquadTable({ squad, leagueId }: { squad: MySquad; league
             <th className="l">Team</th>
             <th className="l">Status</th>
             <th>Marktwert</th>
-            <th title="Marktwert-Änderung von gestern auf heute (€ und %); darunter klein die Steigerung des Vortages (vorgestern → gestern).">
+            <th title="Momentum der Marktwert-Steigerung. € = Änderung von gestern auf heute. Orange, wenn diese Steigerung KLEINER ist als die vorgestrige (Anstieg lässt nach = Warnsignal); grün, wenn gleich groß oder größer (Anstieg hält/beschleunigt). Die % in Klammern = um wie viel die gestrige Steigerung gegenüber der vorgestrigen zu- oder abgenommen hat. Darunter klein: die vorgestrige Steigerung als Vergleichswert.">
               Entwicklung seit gestern
             </th>
             <th>Kaufpreis</th>
@@ -60,17 +60,29 @@ export default function SquadTable({ squad, leagueId }: { squad: MySquad; league
                   "—"
                 ) : (
                   <>
-                    <span style={{ color: col(p.mvChangeDay) }} title={eurFull(p.mvChangeDay)}>
+                    <span
+                      style={{
+                        // Farbe = Momentum: orange, wenn die gestrige Steigerung kleiner
+                        // ist als die vorgestrige; sonst grün. Ohne Vergleichswert
+                        // (erste Tage): nach Vorzeichen.
+                        color:
+                          p.mvChangePrev != null
+                            ? p.mvChangeDay < p.mvChangePrev
+                              ? "var(--warn)"
+                              : "var(--gain)"
+                            : col(p.mvChangeDay),
+                      }}
+                      title={eurFull(p.mvChangeDay)}
+                    >
                       {eurSigned(p.mvChangeDay)}
-                      {p.mvChangeDayPct != null && ` (${fmtPct(p.mvChangeDayPct)})`}
+                      {p.mvChangePrev != null &&
+                        p.mvChangePrev !== 0 &&
+                        ` (${fmtPct((p.mvChangeDay - p.mvChangePrev) / Math.abs(p.mvChangePrev))})`}
                     </span>
                     {p.mvChangePrev != null && (
                       <div style={{ fontSize: 11, marginTop: 2, color: "var(--mute)" }}>
                         vorgestern{" "}
-                        <span style={{ color: col(p.mvChangePrev) }} title={eurFull(p.mvChangePrev)}>
-                          {eurSigned(p.mvChangePrev)}
-                          {p.mvChangePrevPct != null && ` (${fmtPct(p.mvChangePrevPct)})`}
-                        </span>
+                        <span title={eurFull(p.mvChangePrev)}>{eurSigned(p.mvChangePrev)}</span>
                       </div>
                     )}
                   </>
