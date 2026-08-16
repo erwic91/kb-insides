@@ -874,13 +874,106 @@ code {
   .grid-4 {
     grid-template-columns: 1fr;
   }
-  .nav {
-    display: none;
-  }
   .hide-sm {
     display: none;
   }
+
+  /* Topbar zweizeilig: Marke + Liga-Switch oben, Navigation als scrollbare
+     Zeile darunter — statt die Navigation auf Mobile ganz auszublenden. */
   .topbar-in {
-    gap: 14px;
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 16px;
+    gap: 10px 14px;
+  }
+  .topbar-spacer {
+    display: none;
+  }
+  .brand {
+    order: 1;
+  }
+  .lswitch {
+    order: 2;
+    margin-left: auto;
+    min-width: 0;
+    max-width: 68%;
+  }
+  .seg {
+    overflow-x: auto;
+    max-width: 100%;
+    scrollbar-width: none;
+  }
+  .seg::-webkit-scrollbar {
+    display: none;
+  }
+  .nav {
+    order: 3;
+    width: 100%;
+    flex-basis: 100%;
+    overflow-x: auto;
+    gap: 2px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav::-webkit-scrollbar {
+    display: none;
+  }
+  .nav a {
+    white-space: nowrap;
+    padding: 7px 11px;
+  }
+}
+
+/* ---------- Telefon-Feinschliff ---------- */
+@media (max-width: 560px) {
+  .wrap,
+  .page {
+    padding: 0 14px 72px;
+  }
+  .topbar-in {
+    padding: 9px 14px;
+  }
+  .lswitch .lbl {
+    display: none;
+  }
+  .lswitch {
+    max-width: 72%;
+  }
+  .seg button {
+    padding: 6px 9px;
+    font-size: 10.5px;
+  }
+  .page-head {
+    padding: 10px 0 16px;
+    margin-bottom: 18px;
+  }
+  .page-head h1 {
+    font-size: clamp(21px, 6.4vw, 30px);
+    overflow-wrap: break-word;
+  }
+  /* Datentabellen kompakter & einzeilig — horizontaler Scroll im .table-wrap. */
+  .table-wrap .data th,
+  .table-wrap .data td {
+    padding: 9px 8px;
+    white-space: nowrap;
+  }
+  .tile .value {
+    font-size: 20px;
+  }
+  .tile .value.sm {
+    font-size: 18px;
+  }
+  .tabs a {
+    padding: 9px 11px;
+    font-size: 12px;
+  }
+  /* Abschnittskopf untereinander statt gequetscht nebeneinander. */
+  .section-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+  .page-head {
+    justify-content: flex-start;
   }
 }

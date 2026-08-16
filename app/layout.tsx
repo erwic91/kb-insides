@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
 import { Archivo, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
@@ -31,6 +31,11 @@ const mono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Ligamonitor",
   description: "Kickbase-Liga-Insights über die Mitmanager",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
