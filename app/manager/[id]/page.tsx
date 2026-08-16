@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { resolveLeague, getManagerDetail, isManagerHidden } from "../../../lib/db/queries";
+import { resolveLeague, getManagerDetail, getManagerSquad, isManagerHidden } from "../../../lib/db/queries";
 import { getAdjustments } from "../../../lib/db/adjustments";
 import { addManagerAdjustment, removeManagerAdjustment, setHiddenManager } from "./actions";
+import SquadTable from "../../../components/SquadTable";
 import { eur, eurFull, eurSigned, num, pct, date } from "../../../lib/format";
 import type { CSSProperties } from "react";
 
@@ -27,11 +28,12 @@ export default async function ManagerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ league?: string; ok?: string; err?: string }>;
+  searchParams: Promise<{ league?: string; ok?: string; err?: string; tab?: string }>;
 }) {
   const { id } = await params;
-  const { league: requested, ok, err } = await searchParams;
+  const { league: requested, ok, err, tab } = await searchParams;
   const league = await resolveLeague(requested);
+  const activeTab = tab === "history" ? "history" : "kader";
 
   if (!league) {
     return (
@@ -62,9 +64,10 @@ export default async function ManagerPage({
   }
 
   const net = m.sold - m.bought;
-  const [adjustments, hidden] = await Promise.all([
+  const [adjustments, hidden, squad] = await Promise.all([
     getAdjustments(league.id, id),
     isManagerHidden(id),
+    getManagerSquad(league, id),
   ]);
   const OKS: Record<string, string> = { added: "Korrektur gespeichert.", removed: "Korrektur entfernt." };
   const ERRS: Record<string, string> = {
@@ -252,48 +255,84 @@ export default async function ManagerPage({
       </section>
 
       <section className="section">
-        <div className="section-head">
-          <h2>Transferhistorie</h2>
-          <span className="note">{m.transfers.length} Einträge</span>
+        <div className="tabs">
+          <Link
+            href={`/manager/${id}?league=${encodeURIComponent(league.id)}&tab=kader`}
+            className={activeTab === "kader" ? "on" : ""}
+          >
+            Kader{squad && squad.rows.length > 0 ? ` (${squad.rows.length})` : ""}
+          </Link>
+          <Link
+            href={`/manager/${id}?league=${encodeURIComponent(league.id)}&tab=history`}
+            className={activeTab === "history" ? "on" : ""}
+          >
+            Transferhistorie{m.transfers.length > 0 ? ` (${m.transfers.length})` : ""}
+          </Link>
         </div>
-        {m.transfers.length === 0 ? (
-          <div className="notice">
-            Für diesen Manager liegen noch keine Transfers vor. Sie werden beim nächsten
-            Collector-Lauf gesammelt.
-          </div>
+
+        {activeTab === "kader" ? (
+          squad && squad.rows.length > 0 ? (
+            <>
+              <div className="section-head">
+                <h2>Kader</h2>
+                <span className="note">
+                  {squad.rows.length} Spieler · Kaderwert {eur(squad.teamValue)}
+                </span>
+              </div>
+              <SquadTable squad={squad} leagueId={league.id} />
+            </>
+          ) : (
+            <div className="notice">
+              Für diesen Manager ist kein Kader erfasst. Er wird beim nächsten Collector-Lauf
+              gesammelt.
+            </div>
+          )
         ) : (
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th className="l">Datum</th>
-                  <th className="l">Spieler</th>
-                  <th className="l">Richtung</th>
-                  <th>Preis</th>
-                </tr>
-              </thead>
-              <tbody>
-                {m.transfers.map((t) => (
-                  <tr key={t.id}>
-                    <td className="l muted">{date(t.ts)}</td>
-                    <td className="l">
-                      <Link href={leagueHref(`/player/${t.playerId}`, league.id)}>
-                        {t.playerName}
-                      </Link>
-                    </td>
-                    <td className="l">
-                      {t.direction === "buy" ? (
-                        <span className="badge">Kauf</span>
-                      ) : (
-                        <span className="badge accent">Verkauf</span>
-                      )}
-                    </td>
-                    <td>{eurFull(t.price)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="section-head">
+              <h2>Transferhistorie</h2>
+              <span className="note">{m.transfers.length} Einträge</span>
+            </div>
+            {m.transfers.length === 0 ? (
+              <div className="notice">
+                Für diesen Manager liegen noch keine Transfers vor. Sie werden beim nächsten
+                Collector-Lauf gesammelt.
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="data">
+                  <thead>
+                    <tr>
+                      <th className="l">Datum</th>
+                      <th className="l">Spieler</th>
+                      <th className="l">Richtung</th>
+                      <th>Preis</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {m.transfers.map((t) => (
+                      <tr key={t.id}>
+                        <td className="l muted">{date(t.ts)}</td>
+                        <td className="l">
+                          <Link href={leagueHref(`/player/${t.playerId}`, league.id)}>
+                            {t.playerName}
+                          </Link>
+                        </td>
+                        <td className="l">
+                          {t.direction === "buy" ? (
+                            <span className="badge">Kauf</span>
+                          ) : (
+                            <span className="badge accent">Verkauf</span>
+                          )}
+                        </td>
+                        <td>{eurFull(t.price)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </section>
     </main>

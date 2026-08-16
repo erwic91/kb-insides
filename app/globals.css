@@ -841,6 +841,33 @@ code {
   color: var(--ink);
 }
 
+/* ---------- Tabs (URL-basiert, Server-Komponente) ---------- */
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 18px;
+}
+.tabs a {
+  padding: 10px 16px;
+  font-family: var(--display);
+  font-variation-settings: "wght" 600;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mute);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tabs a:hover {
+  color: var(--ink);
+}
+.tabs a.on {
+  color: var(--ink);
+  border-bottom-color: var(--signal);
+}
+
 @media (max-width: 940px) {
   .g-2,
   .tiles4,

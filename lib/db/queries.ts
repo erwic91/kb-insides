@@ -790,11 +790,24 @@ export interface MySquad {
  * berechnetem Transfergewinn je Spieler (Marktwert − letzter Kaufpreis).
  */
 export async function getMySquad(league: LeagueLite): Promise<MySquad | null> {
-  const supabase = await getReadClient();
-  if (!supabase) return null;
   const access = await getMyAccess();
   if (!access) return null;
-  const mid = access.kbManagerId;
+  return getManagerSquad(league, access.kbManagerId);
+}
+
+/**
+ * Kader EINES beliebigen Managers (für die Manager-Detailseite). Gleiche Infos
+ * wie getMySquad: Marktwert, Punkte, Ø, Status, letzter Kaufpreis & Gewinn aus
+ * der Transferhistorie dieses Managers. Marktwert-Momentum (mv_prev*) ist nur
+ * für den eigenen Kader befüllt → bei Gegnern dort „—".
+ */
+export async function getManagerSquad(
+  league: LeagueLite,
+  managerId: string,
+): Promise<MySquad | null> {
+  const supabase = await getReadClient();
+  if (!supabase) return null;
+  const mid = managerId;
 
   const { data } = await supabase
     .from("squad_players")
