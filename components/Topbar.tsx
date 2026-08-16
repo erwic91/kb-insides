@@ -16,10 +16,13 @@ const NAV = [
 export default function Topbar({
   leagues,
   defaultLeagueId,
+  isAdmin = false,
 }: {
   leagues: Pick<LeagueLite, "id" | "name">[];
   /** Liga, die die Seite ohne ?league-Param anzeigt (= resolveLeague-Default). */
   defaultLeagueId?: string | null;
+  /** Zeigt den Admin-Link (nur für Admin-Accounts). */
+  isAdmin?: boolean;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -59,6 +62,11 @@ export default function Topbar({
               </Link>
             );
           })}
+          {isAdmin && (
+            <Link href="/admin" className={pathname.startsWith("/admin") ? "on" : ""}>
+              Admin
+            </Link>
+          )}
         </nav>
         <div className="topbar-spacer" />
         <div className="lswitch">

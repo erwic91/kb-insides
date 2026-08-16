@@ -5,6 +5,8 @@ import { Archivo, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import Topbar from "../components/Topbar";
 import { getLeagues } from "../lib/db/queries";
+import { getCurrentUser } from "../lib/supabase/server";
+import { isAdminEmail } from "../lib/db/admin";
 
 // Self-hosted über next/font (zur Build-Zeit geladen) — kein Runtime-CDN-Call.
 const display = Archivo({
@@ -32,7 +34,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const leagues = await getLeagues();
+  const [leagues, currentUser] = await Promise.all([getLeagues(), getCurrentUser()]);
+  const isAdmin = isAdminEmail(currentUser?.email);
   // Dieselbe Default-Auflösung wie resolveLeague (isDefault, sonst erste), damit
   // der Liga-Switch ohne ?league-Param dieselbe Liga markiert, die angezeigt wird.
   const defaultLeagueId = (leagues.find((l) => l.isDefault) ?? leagues[0])?.id ?? null;
@@ -43,6 +46,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <Topbar
             leagues={leagues.map((l) => ({ id: l.id, name: l.name }))}
             defaultLeagueId={defaultLeagueId}
+            isAdmin={isAdmin}
           />
         </Suspense>
         {children}
