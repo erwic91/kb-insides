@@ -22,8 +22,9 @@ export function sumTransfers(transfers: Pick<TransferRow, "direction" | "price">
 /**
  * Kontorekonstruktion (SPEC §7):
  *   Konto = Startbudget − Σ Käufe + Σ Verkäufe + Σ Prämien
- * `prizes` = Erfolgs-/Auflaufprämien (in dieser Liga Auflaufprämie aus → 0,
- * Erfolgsprämien separat zu ermitteln).
+ * `prizes` = alle Gutschriften: täglicher Login-Bonus, Spieltagsbonus
+ * (Saisonpunkte × 1000 € im Manager-Modus) und manuelle Korrekturen. Wird von
+ * den Aufrufern (queries.ts) summiert übergeben.
  *
  * ⚠ Verlässlich nur mit VOLLSTÄNDIGER Transfer-Historie. Die API deckelt die
  * Transfer-Liste (~25) → bei langer Historie fehlen ältere Transfers, dann ist

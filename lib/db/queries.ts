@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from "../supabase/server";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
 import { loginBonusSinceReset } from "../compute/loginBonus";
+import { MATCHDAY_BONUS_PER_POINT } from "../ingest/matchdayBonus";
 import { getAdjustmentSums } from "./adjustments";
 import { computeBidAdvice, type BidAdvice } from "../compute/bidadvisor";
 import { START_BUDGET } from "../compute/constants";
@@ -155,6 +156,23 @@ async function getTeamValueDeltas(leagueId: string): Promise<Map<string, number>
   return out;
 }
 
+/**
+ * Bestätigte Spieltags-Bonuspunkte je Manager (manager_bonus_points, wöchentlich
+ * dienstags eingefroren). Grundlage für den Spieltagsbonus = Punkte × 1000 €.
+ * Leere Map, solange noch kein Spieltag abgeschlossen ist.
+ */
+async function getMatchdayBonusPoints(leagueId: string): Promise<Map<string, number>> {
+  const supabase = await getReadClient();
+  const out = new Map<string, number>();
+  if (!supabase) return out;
+  const { data } = await supabase
+    .from("manager_bonus_points")
+    .select("manager_id, points")
+    .eq("league_id", leagueId);
+  for (const r of data ?? []) out.set(r.manager_id as string, (r.points as number) ?? 0);
+  return out;
+}
+
 /** Eigener exakter Kontostand je Spieltag (aus user_budget; RLS = nur eigene). */
 async function getMyBudget(leagueId: string): Promise<Map<number, number>> {
   const supabase = await getReadClient();
@@ -301,13 +319,17 @@ export async function getManagerTable(
   const transfers = await getTransfersByManager(league.id);
   // „Ich" + exakter Kontostand kommen jetzt pro Nutzer aus league_access /
   // user_budget (nicht mehr aus managers.is_me / snapshots.cash_actual).
-  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds] = await Promise.all([
+  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds, bonusPoints] = await Promise.all([
     getMyAccess(),
     getMyBudget(league.id),
     getAdjustmentSums(league.id),
     getTeamValueDeltas(league.id),
     getHiddenManagerIds(),
+    getMatchdayBonusPoints(league.id),
   ]);
+  // Spieltagsbonus (Punkte × 1000 €) nur im Manager-Modus (gameMode 2).
+  const bonusFor = (mid: string) =>
+    league.gameMode === 2 ? (bonusPoints.get(mid) ?? 0) * MATCHDAY_BONUS_PER_POINT : 0;
   const myCashActual = myBudget.get(day) ?? null;
   const now = Date.now();
   // Täglicher Login-Bonus als Tages-Summe ab Reset (10k → 100k/Tag), Annahme
@@ -352,7 +374,7 @@ export async function getManagerTable(
       league.startBudget > 0
         ? reconstructCash(myTransfers ?? [], {
             startBudget: league.startBudget,
-            prizes: loginBonus + (adjustments.get(mid) ?? 0),
+            prizes: loginBonus + (adjustments.get(mid) ?? 0) + bonusFor(mid),
           })
         : null;
     const cash = cashActual ?? reconstructed;
@@ -471,11 +493,15 @@ export async function getManagerDetail(
   // (inkl. Login-Bonus als Tages-Summe ab Reset + manuelle Korrekturen).
   const loginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
   const adjustment = (await getAdjustmentSums(league.id)).get(managerId) ?? 0;
+  const matchdayBonus =
+    league.gameMode === 2
+      ? ((await getMatchdayBonusPoints(league.id)).get(managerId) ?? 0) * MATCHDAY_BONUS_PER_POINT
+      : 0;
   const reconstructed =
     league.startBudget > 0
       ? reconstructCash(transfers, {
           startBudget: league.startBudget,
-          prizes: loginBonus + adjustment,
+          prizes: loginBonus + adjustment + matchdayBonus,
         })
       : null;
   const cash = cashActual != null ? cashActual : reconstructed;
