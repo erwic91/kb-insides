@@ -38,6 +38,8 @@ export interface ManagerTableRow {
   teamValue: number | null;
   /** Kaderwert-Veränderung zum Vortag in % (0.05 = +5 %); null wenn unbekannt. */
   teamValueDeltaPct: number | null;
+  /** Platzierungs-Änderung durch den letzten Spieltag (+2 = 2 Ränge hoch); null/0 = keine. */
+  rankDelta: number | null;
   points: number | null;
   streak: number | null;
   squadSize: number | null;
@@ -393,6 +395,7 @@ export async function getManagerTable(
       isMe,
       teamValue,
       teamValueDeltaPct: tvDeltas.get(mid) ?? null,
+      rankDelta: null, // unten aus points_series berechnet (nach Hidden-Filter)
       points: (s.points as number) ?? null,
       streak: (s.streak as number) ?? null,
       squadSize: (s.squad_size as number) ?? null,
@@ -419,6 +422,43 @@ export async function getManagerTable(
     hidden.push({ id: r.id, name: r.name });
     return false;
   });
+
+  // Platzierungs-Änderung durch den JÜNGSTEN gespielten Spieltag: Rang nach den
+  // Punkten bis inkl. diesem Spieltag vs. Rang nach den Punkten davor — beides
+  // aus der Spieltags-Punkteserie (points_series). Kein zusätzlicher Speicher.
+  //  - Nur sichtbare, aktive Manager; Tiebreaker manager_id (gleiche Punkte →
+  //    keine Scheinbewegung).
+  //  - „letzter Spieltag" = letzter Index mit Punkten (ignoriert angehängte
+  //    0-Spieltage) → der Indikator bleibt zwischen Spieltagen stehen.
+  //  - Erst ab dem 2. Spieltag (davor gibt es keine sinnvolle Vor-Platzierung).
+  const activeVisible = visible.filter((r) => r.active);
+  const cumPoints = (series: (number | null)[] | null, upto: number) =>
+    (series ?? []).slice(0, upto).reduce((sum: number, x) => sum + (x ?? 0), 0);
+  const maxLen = activeVisible.reduce((m, r) => Math.max(m, (r.pointsSeries ?? []).length), 0);
+  let lastPlayed = -1;
+  for (let i = maxLen - 1; i >= 0; i--) {
+    if (activeVisible.some((r) => ((r.pointsSeries ?? [])[i] ?? 0) !== 0)) {
+      lastPlayed = i;
+      break;
+    }
+  }
+  if (lastPlayed >= 1) {
+    const rankMap = (upto: number) => {
+      const arr = activeVisible
+        .map((r) => ({ id: r.id, v: cumPoints(r.pointsSeries, upto) }))
+        .sort((a, b) => b.v - a.v || a.id.localeCompare(b.id));
+      const m = new Map<string, number>();
+      arr.forEach((x, i) => m.set(x.id, i + 1));
+      return m;
+    };
+    const rankNow = rankMap(lastPlayed + 1);
+    const rankPrev = rankMap(lastPlayed);
+    for (const r of activeVisible) {
+      const now = rankNow.get(r.id);
+      const prev = rankPrev.get(r.id);
+      r.rankDelta = now != null && prev != null ? prev - now : null; // + = hoch
+    }
+  }
 
   // Sortierung: aktive nach Saisonpunkten, inaktive ans Ende.
   visible.sort((a, b) => {

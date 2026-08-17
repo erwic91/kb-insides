@@ -156,6 +156,20 @@ export default function ManagerTable({
                   <Link href={leagueHref(`/manager/${r.id}`)} className="nm linklike">
                     {r.name}
                   </Link>
+                  {r.rankDelta != null && r.rankDelta !== 0 && (
+                    <span
+                      title="Veränderung der Platzierung durch den letzten Spieltag"
+                      style={{
+                        fontFamily: "var(--mono)",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: r.rankDelta > 0 ? "var(--gain)" : "var(--loss)",
+                      }}
+                    >
+                      {r.rankDelta > 0 ? "▲" : "▼"}
+                      {Math.abs(r.rankDelta)}
+                    </span>
+                  )}
                   {r.isMe && <span className="tag">du</span>}
                   {!r.active && <span className="warnflag">inaktiv</span>}
                 </div>

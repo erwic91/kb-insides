@@ -130,7 +130,7 @@ export default async function DashboardPage({
         <div className="section-head">
           <h2>
             Alle Manager
-            <InfoDot text="Alle Manager der Liga. Kaderwert, Punkte, Spieler & Aktivität kommen direkt aus Kickbase. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Spaltenköpfe haben eigene Erklärungen." />
+            <InfoDot text="Alle Manager der Liga. Kaderwert, Punkte, Spieler & Aktivität kommen direkt aus Kickbase. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Das ▲/▼ am Namen zeigt die Platzierungs-Änderung durch den letzten Spieltag. Spaltenköpfe haben eigene Erklärungen." />
           </h2>
           <span className="note">Spaltenkopf klicken zum Sortieren</span>
         </div>
