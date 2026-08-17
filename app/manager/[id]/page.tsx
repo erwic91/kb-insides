@@ -66,7 +66,7 @@ export default async function ManagerPage({
   const net = m.sold - m.bought;
   const [adjustments, hidden, squad] = await Promise.all([
     getAdjustments(league.id, id),
-    isManagerHidden(id),
+    isManagerHidden(league.id, id),
     getManagerSquad(league, id),
   ]);
   const OKS: Record<string, string> = { added: "Korrektur gespeichert.", removed: "Korrektur entfernt." };
@@ -99,6 +99,7 @@ export default async function ManagerPage({
         </div>
         {!m.isMe && (
           <form action={setHiddenManager}>
+            <input type="hidden" name="leagueId" value={league.id} />
             <input type="hidden" name="managerId" value={id} />
             <input type="hidden" name="hidden" value={hidden ? "0" : "1"} />
             <input type="hidden" name="redirectTo" value={leagueHref(`/manager/${id}`, league.id)} />
@@ -111,8 +112,9 @@ export default async function ManagerPage({
 
       {hidden && (
         <div className="notice" style={{ marginBottom: 16 }}>
-          Dieser Manager ist global ausgeblendet — er erscheint in keiner Liga in Ranking,
-          Ø-Werten oder Insights. Seine Daten werden weiter gesammelt.
+          Dieser Manager ist <strong>in {league.name}</strong> ausgeblendet — hier taucht er
+          nicht in Ranking, Ø-Werten oder Insights auf. In anderen Ligen bleibt er sichtbar,
+          und seine Daten werden weiter gesammelt.
         </div>
       )}
 

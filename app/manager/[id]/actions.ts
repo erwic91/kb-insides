@@ -47,17 +47,19 @@ export async function removeManagerAdjustment(formData: FormData): Promise<void>
 }
 
 /**
- * Manager global aus-/einblenden (liga-übergreifend). Für nicht mitspielende
- * Admins/„Karteileichen": raus aus Ranking, Ø-Werten und Insights. Login genügt
- * (globale Einstellung der Umgebung). `redirectTo` muss ein relativer Pfad sein.
+ * Manager in EINER Liga aus-/einblenden. Für nicht mitspielende Admins/
+ * „Karteileichen": raus aus Ranking, Ø-Werten und Insights — aber nur in dieser
+ * Liga (dieselbe Person kann anderswo normaler Manager sein). Login genügt;
+ * `redirectTo` muss ein relativer Pfad sein.
  */
 export async function setHiddenManager(formData: FormData): Promise<void> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  const leagueId = String(formData.get("leagueId") ?? "").trim();
   const managerId = String(formData.get("managerId") ?? "").trim();
-  if (!managerId) redirect("/");
+  if (!leagueId || !managerId) redirect("/");
   const hidden = String(formData.get("hidden") ?? "") === "1";
-  await setManagerHidden(managerId, hidden);
+  await setManagerHidden(leagueId, managerId, hidden);
   const to = String(formData.get("redirectTo") ?? "").trim();
   redirect(to.startsWith("/") ? to : "/");
 }

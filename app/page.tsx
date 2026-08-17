@@ -140,6 +140,7 @@ export default async function DashboardPage({
             <span className="muted">Ausgeblendet:</span>
             {hidden.map((h) => (
               <form key={h.id} action={setHiddenManager} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <input type="hidden" name="leagueId" value={league.id} />
                 <input type="hidden" name="managerId" value={h.id} />
                 <input type="hidden" name="hidden" value="0" />
                 <input type="hidden" name="redirectTo" value={`/?league=${encodeURIComponent(league.id)}`} />

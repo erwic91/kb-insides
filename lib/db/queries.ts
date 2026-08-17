@@ -103,21 +103,25 @@ export async function getMyAccess(): Promise<MyAccess | null> {
   return { leagueId: data.league_id as string, kbManagerId: data.kb_manager_id as string };
 }
 
-/** Global (liga-übergreifend) ausgeblendete Manager-IDs (hidden_managers). */
-export async function getHiddenManagerIds(): Promise<Set<string>> {
+/** In DIESER Liga ausgeblendete Manager-IDs (hidden_managers, pro Liga). */
+export async function getHiddenManagerIds(leagueId: string): Promise<Set<string>> {
   const supabase = await getReadClient();
   if (!supabase) return new Set();
-  const { data } = await supabase.from("hidden_managers").select("manager_id");
+  const { data } = await supabase
+    .from("hidden_managers")
+    .select("manager_id")
+    .eq("league_id", leagueId);
   return new Set((data ?? []).map((r) => r.manager_id as string));
 }
 
-/** Ist dieser Manager global ausgeblendet? */
-export async function isManagerHidden(managerId: string): Promise<boolean> {
+/** Ist dieser Manager in DIESER Liga ausgeblendet? */
+export async function isManagerHidden(leagueId: string, managerId: string): Promise<boolean> {
   const supabase = await getReadClient();
   if (!supabase) return false;
   const { data } = await supabase
     .from("hidden_managers")
     .select("manager_id")
+    .eq("league_id", leagueId)
     .eq("manager_id", managerId)
     .maybeSingle();
   return data != null;
@@ -324,7 +328,7 @@ export async function getManagerTable(
     getMyBudget(league.id),
     getAdjustmentSums(league.id),
     getTeamValueDeltas(league.id),
-    getHiddenManagerIds(),
+    getHiddenManagerIds(league.id),
     getMatchdayBonusPoints(league.id),
   ]);
   // Spieltagsbonus (Punkte × 1000 €) nur im Manager-Modus (gameMode 2).
