@@ -815,7 +815,7 @@ export async function getManagerSquad(
 
   const { data } = await supabase
     .from("squad_players")
-    .select("player_id, points, avg_points, market_value, position, status, mv_prev_day, mv_prev2_day")
+    .select("player_id, points, avg_points, market_value, position, status")
     .eq("league_id", league.id)
     .eq("manager_id", mid)
     .order("market_value", { ascending: false, nullsFirst: false });
@@ -829,6 +829,30 @@ export async function getManagerSquad(
   const pmap = new Map<string, { name?: string; position?: string; team?: string }>();
   for (const p of pdata ?? [])
     pmap.set(p.id as string, { name: p.name as string, position: p.position as string, team: p.team as string });
+
+  // Marktwert-Tagesentwicklung für ALLE Kaderspieler (nicht nur den eigenen):
+  // die zwei jüngsten Tages-Snapshots VOR heute (player_mv_daily). „Heute" ist
+  // der Live-Marktwert (market_value oben). So folgt „gestern"/„vorgestern" den
+  // nächtlichen Snapshots — verfügbar, sobald ≥2 Nächte gesammelt wurden.
+  const today = new Date().toISOString().slice(0, 10);
+  const mvHist = new Map<string, number[]>(); // player_id → [gestern, vorgestern]
+  if (pids.length > 0) {
+    const { data: mvDaily } = await supabase
+      .from("player_mv_daily")
+      .select("player_id, market_value, snap_date")
+      .eq("league_id", league.id)
+      .in("player_id", pids)
+      .lt("snap_date", today)
+      .order("snap_date", { ascending: false });
+    for (const r of mvDaily ?? []) {
+      const pid = r.player_id as string;
+      const arr = mvHist.get(pid) ?? [];
+      if (arr.length < 2) {
+        arr.push(r.market_value as number);
+        mvHist.set(pid, arr);
+      }
+    }
+  }
 
   // Letzter Kaufpreis je Spieler aus den eigenen Transfers.
   const transfers = await getTransfersByManager(league.id);
@@ -852,8 +876,9 @@ export async function getManagerSquad(
     if (profit != null) totalProfit += profit;
 
     // Marktwert-Tagesentwicklung: heute (mv) vs. gestern (mvPrev) vs. vorgestern.
-    const mvPrev = (r.mv_prev_day as number) ?? null;
-    const mvPrev2 = (r.mv_prev2_day as number) ?? null;
+    const hist = mvHist.get(pid);
+    const mvPrev = hist?.[0] ?? null;
+    const mvPrev2 = hist?.[1] ?? null;
     const mvChangeDay = mv != null && mvPrev != null ? mv - mvPrev : null;
     const mvChangeDayPct = mvChangeDay != null && mvPrev ? mvChangeDay / mvPrev : null;
     const mvChangePrev = mvPrev != null && mvPrev2 != null ? mvPrev - mvPrev2 : null;

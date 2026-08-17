@@ -31,12 +31,12 @@ import {
   getLeagueMoneyBasis,
   replaceSquadPlayers,
   upsertManagerTvDaily,
+  upsertPlayerMvDaily,
   getBuyTransfersMissingMv,
   updateTransferMvAtTime,
-  getManagerSquadPlayers,
-  updateSquadMvHistory,
   type SquadPlayerRow,
   type ManagerTvDailyRow,
+  type PlayerMvDailyRow,
 } from "../db/ingest";
 import {
   getCollectionTargets,
@@ -194,6 +194,19 @@ async function collectLeagueWide(
           team_value: s.team_value,
         }));
       if (tvDaily.length > 0) await upsertManagerTvDaily(tvDaily);
+
+      // Täglicher Marktwert je Kaderspieler → „Entwicklung seit gestern" für
+      // ALLE Manager (nicht nur den eigenen Kader). Kein zusätzlicher API-Call:
+      // die Marktwerte stammen aus den bereits geholten Kadern.
+      const mvDaily: PlayerMvDailyRow[] = squadPlayers
+        .filter((p) => p.market_value != null)
+        .map((p) => ({
+          league_id: leagueId,
+          player_id: p.player_id,
+          snap_date: snapDate,
+          market_value: p.market_value as number,
+        }));
+      if (mvDaily.length > 0) await upsertPlayerMvDaily(mvDaily);
     }
     await politeDelay();
 
@@ -269,45 +282,6 @@ async function backfillOverpay(
   }
 }
 
-/**
- * Backfill der Marktwert-Tageshistorie (gestern/vorgestern) für den eigenen
- * Kader — Basis für „Entwicklung seit gestern". Je Spieler eine MV-Kurve,
- * daraus der Marktwert von gestern und vorgestern. Gedeckelt, best-effort.
- */
-async function backfillSquadMvHistory(
-  leagueId: string,
-  managerId: string,
-  token: string,
-  cap = 20,
-): Promise<void> {
-  const players = await getManagerSquadPlayers(leagueId, managerId);
-  if (players.length === 0) return;
-
-  for (const p of players.slice(0, cap)) {
-    let mvYesterday: number | null = null;
-    let mvDayBefore: number | null = null;
-    try {
-      const raw = await fetchPlayerMarketValue(leagueId, p.player_id, "365", { token });
-      const pts = (raw.it ?? [])
-        .filter((q) => q.dt != null && q.mv != null)
-        .map((q) => ({ d: q.dt as number, mv: q.mv as number }))
-        .sort((a, b) => a.d - b.d);
-      // Kickbase aktualisiert die Marktwerte täglich um 22:15 (deutscher Zeit)
-      // und hängt dann einen neuen Kurvenpunkt an. Der LETZTE Punkt spiegelt
-      // daher stets den aktuellen Marktwert (= market_value), der vorletzte ist
-      // „gestern", der vorvorletzte „vorgestern". Damit folgt die Tagesgrenze
-      // automatisch dem 22:15-Update — ohne eigene Uhrzeit-/Zeitzonen-Logik.
-      const n = pts.length;
-      if (n >= 2) mvYesterday = pts[n - 2]!.mv;
-      if (n >= 3) mvDayBefore = pts[n - 3]!.mv;
-    } catch {
-      // Kurve nicht verfügbar → Historie bleibt leer (Spalte zeigt „—").
-    }
-    await updateSquadMvHistory(leagueId, managerId, p.player_id, mvYesterday, mvDayBefore);
-    await politeDelay();
-  }
-}
-
 /** Nutzer-privater exakter Kontostand (/me/budget) → user_budget. */
 async function collectUserBudget(
   userId: string,
@@ -376,11 +350,6 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     } catch {
       // Overpay-Backfill best-effort.
     }
-    try {
-      await backfillSquadMvHistory(t.leagueId, t.kbUserId, t.token);
-    } catch {
-      // MV-Historie best-effort.
-    }
   }
 
   // Externe Ausfälle (api-football) einmal pro Lauf, mit Freshness-Guard.
@@ -440,11 +409,6 @@ export async function runCollectForUser(
         await backfillOverpay(l.leagueId, kbUserId, token);
       } catch {
         // Overpay-Backfill best-effort.
-      }
-      try {
-        await backfillSquadMvHistory(l.leagueId, kbUserId, token);
-      } catch {
-        // MV-Historie best-effort.
       }
     }
     results.push(r);

@@ -171,37 +171,6 @@ export async function upsertManagerSnapshots(snapshots: SnapshotRow[]): Promise<
   if (error) throw new Error(`manager_snapshots upsert fehlgeschlagen: ${error.message}`);
 }
 
-/** Spieler-IDs im Kader eines Managers (Basis für den MV-Historie-Backfill). */
-export async function getManagerSquadPlayers(
-  leagueId: string,
-  managerId: string,
-): Promise<{ player_id: string }[]> {
-  const supabase = getServiceClient();
-  const { data } = await supabase
-    .from("squad_players")
-    .select("player_id")
-    .eq("league_id", leagueId)
-    .eq("manager_id", managerId);
-  return (data ?? []).map((r) => ({ player_id: r.player_id as string }));
-}
-
-/** Setzt Marktwert gestern/vorgestern eines Kaderspielers (Tages-Entwicklung). */
-export async function updateSquadMvHistory(
-  leagueId: string,
-  managerId: string,
-  playerId: string,
-  mvPrevDay: number | null,
-  mvPrev2Day: number | null,
-): Promise<void> {
-  const supabase = getServiceClient();
-  await supabase
-    .from("squad_players")
-    .update({ mv_prev_day: mvPrevDay, mv_prev2_day: mvPrev2Day })
-    .eq("league_id", leagueId)
-    .eq("manager_id", managerId)
-    .eq("player_id", playerId);
-}
-
 /** Käufe eines Managers ohne Marktwert-zum-Zeitpunkt (für den Overpay-Backfill). */
 export async function getBuyTransfersMissingMv(
   leagueId: string,
@@ -301,6 +270,23 @@ export async function upsertPlayerMv(rows: PlayerMvRow[]): Promise<void> {
     .from("player_mv")
     .upsert(rows, { onConflict: "league_id,player_id,day" });
   if (error) throw new Error(`player_mv upsert fehlgeschlagen: ${error.message}`);
+}
+
+export interface PlayerMvDailyRow {
+  league_id: string;
+  player_id: string;
+  snap_date: string; // YYYY-MM-DD
+  market_value: number;
+}
+
+/** Täglicher Marktwert je Kaderspieler (für „Entwicklung seit gestern" aller Manager). */
+export async function upsertPlayerMvDaily(rows: PlayerMvDailyRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  const supabase = getServiceClient();
+  const { error } = await supabase
+    .from("player_mv_daily")
+    .upsert(rows, { onConflict: "league_id,player_id,snap_date" });
+  if (error) throw new Error(`player_mv_daily upsert fehlgeschlagen: ${error.message}`);
 }
 
 /** Kalibrierungszeile (eigene Rekonstruktion vs. /me/budget). */
