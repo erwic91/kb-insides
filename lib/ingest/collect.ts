@@ -46,6 +46,7 @@ import {
 } from "../db/connections";
 import type { PlayerRow } from "./market";
 import { syncExternalInjuries } from "./externalNews";
+import { probeFullPool } from "../kickbase/probeFullPool";
 
 const SQUAD_POS: Record<number, string> = { 1: "TW", 2: "ABW", 3: "MF", 4: "ANG" };
 const posLabel = (pos: number | null | undefined): string | null =>
@@ -362,6 +363,16 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     // externe News best-effort.
   }
 
+  // Voll-Pool-Endpunkt-Discovery (einmalig, Freshness-Guard) — für Markt-Potenzial.
+  const anyToken = [...leagueToken.values()][0];
+  if (anyToken) {
+    try {
+      await probeFullPool(anyToken);
+    } catch {
+      // Discovery best-effort.
+    }
+  }
+
   return { leagues };
 }
 
@@ -420,6 +431,13 @@ export async function runCollectForUser(
     await syncExternalInjuries();
   } catch {
     // externe News best-effort.
+  }
+
+  // Voll-Pool-Endpunkt-Discovery (einmalig, Freshness-Guard) — für Markt-Potenzial.
+  try {
+    await probeFullPool(token);
+  } catch {
+    // Discovery best-effort.
   }
 
   return results;
