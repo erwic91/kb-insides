@@ -870,24 +870,26 @@ export async function getManagerSquad(
   for (const p of pdata ?? [])
     pmap.set(p.id as string, { name: p.name as string, position: p.position as string, team: p.team as string });
 
-  // Marktwert-Tagesentwicklung für ALLE Kaderspieler (nicht nur den eigenen):
-  // die zwei jüngsten Tages-Snapshots VOR heute (player_mv_daily). „Heute" ist
-  // der Live-Marktwert (market_value oben). So folgt „gestern"/„vorgestern" den
-  // nächtlichen Snapshots — verfügbar, sobald ≥2 Nächte gesammelt wurden.
-  const today = new Date().toISOString().slice(0, 10);
-  const mvHist = new Map<string, number[]>(); // player_id → [gestern, vorgestern]
+  // Marktwert-Tagesentwicklung für ALLE Kaderspieler aus den nächtlichen
+  // player_mv_daily-Snapshots: die DREI jüngsten Snapshots je Spieler.
+  //   „seit gestern"  = jüngster − vorletzter Snapshot
+  //   „vorgestern"    = vorletzter − drittletzter Snapshot
+  // Wir vergleichen bewusst Snapshot-gegen-Snapshot (nicht den Live-Marktwert
+  // aus squad_players gegen den jüngsten Snapshot): der Live-Wert stammt aus
+  // demselben Sammel-Lauf wie der jüngste Snapshot und wäre damit identisch →
+  // ergäbe fälschlich „0 €".
+  const mvHist = new Map<string, number[]>(); // player_id → [s0, s1, s2] (neu→alt)
   if (pids.length > 0) {
     const { data: mvDaily } = await supabase
       .from("player_mv_daily")
       .select("player_id, market_value, snap_date")
       .eq("league_id", league.id)
       .in("player_id", pids)
-      .lt("snap_date", today)
       .order("snap_date", { ascending: false });
     for (const r of mvDaily ?? []) {
       const pid = r.player_id as string;
       const arr = mvHist.get(pid) ?? [];
-      if (arr.length < 2) {
+      if (arr.length < 3) {
         arr.push(r.market_value as number);
         mvHist.set(pid, arr);
       }
@@ -915,14 +917,16 @@ export async function getManagerSquad(
     if (mv != null) teamValue += mv;
     if (profit != null) totalProfit += profit;
 
-    // Marktwert-Tagesentwicklung: heute (mv) vs. gestern (mvPrev) vs. vorgestern.
+    // Marktwert-Tagesentwicklung aus den drei jüngsten Snapshots (neu→alt):
+    // seit gestern = s0 − s1, vorgestern = s1 − s2.
     const hist = mvHist.get(pid);
-    const mvPrev = hist?.[0] ?? null;
-    const mvPrev2 = hist?.[1] ?? null;
-    const mvChangeDay = mv != null && mvPrev != null ? mv - mvPrev : null;
-    const mvChangeDayPct = mvChangeDay != null && mvPrev ? mvChangeDay / mvPrev : null;
-    const mvChangePrev = mvPrev != null && mvPrev2 != null ? mvPrev - mvPrev2 : null;
-    const mvChangePrevPct = mvChangePrev != null && mvPrev2 ? mvChangePrev / mvPrev2 : null;
+    const s0 = hist?.[0] ?? null;
+    const s1 = hist?.[1] ?? null;
+    const s2 = hist?.[2] ?? null;
+    const mvChangeDay = s0 != null && s1 != null ? s0 - s1 : null;
+    const mvChangeDayPct = mvChangeDay != null && s1 ? mvChangeDay / s1 : null;
+    const mvChangePrev = s1 != null && s2 != null ? s1 - s2 : null;
+    const mvChangePrevPct = mvChangePrev != null && s2 ? mvChangePrev / s2 : null;
 
     return {
       playerId: pid,

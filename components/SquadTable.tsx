@@ -75,7 +75,8 @@ export default function SquadTable({ squad, leagueId }: { squad: MySquad; league
                       title={eurFull(p.mvChangeDay)}
                     >
                       {eurSigned(p.mvChangeDay)}
-                      {p.mvChangePrev != null &&
+                      {p.mvChangeDay !== 0 &&
+                        p.mvChangePrev != null &&
                         p.mvChangePrev !== 0 &&
                         ` (${fmtPct((p.mvChangeDay - p.mvChangePrev) / Math.abs(p.mvChangePrev))})`}
                     </span>
