@@ -32,7 +32,7 @@ import {
   replaceSquadPlayers,
   upsertManagerTvDaily,
   upsertPlayerMvDaily,
-  getBuyTransfersMissingMv,
+  getBuyTransfersMissingMvLeague,
   updateTransferMvAtTime,
   type SquadPlayerRow,
   type ManagerTvDailyRow,
@@ -41,7 +41,6 @@ import {
 import {
   getCollectionTargets,
   getUserLeagues,
-  getConnectionState,
   upsertUserBudget,
   reconcileLeagueAccess,
 } from "../db/connections";
@@ -247,11 +246,11 @@ const EPOCH_DAY_MS = 86_400_000;
  */
 async function backfillOverpay(
   leagueId: string,
-  managerId: string,
   token: string,
-  cap = 15,
+  cap = 40,
 ): Promise<void> {
-  const missing = await getBuyTransfersMissingMv(leagueId, managerId, cap);
+  // Liga-weit (alle Manager), jüngste Käufe zuerst — Basis fürs Panik-Barometer.
+  const missing = await getBuyTransfersMissingMvLeague(leagueId, cap);
   if (missing.length === 0) return;
 
   const curves = new Map<string, { d: number; mv: number }[]>();
@@ -335,7 +334,16 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     await politeDelay();
   }
 
-  // Pro (Nutzer, Liga): exakter eigener Kontostand + Overpay-Backfill.
+  // Overpay-Backfill EINMAL je Liga (liga-weit, nicht je Nutzer).
+  for (const [leagueId, token] of leagueToken) {
+    try {
+      await backfillOverpay(leagueId, token);
+    } catch {
+      // Overpay-Backfill best-effort.
+    }
+  }
+
+  // Pro (Nutzer, Liga): exakter eigener Kontostand.
   for (const t of budgetTasks) {
     const day = leagueDay.get(t.leagueId);
     if (day == null) continue;
@@ -345,11 +353,6 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
       // /me/budget-Fehler pro Nutzer isolieren.
     }
     await politeDelay();
-    try {
-      await backfillOverpay(t.leagueId, t.kbUserId, t.token);
-    } catch {
-      // Overpay-Backfill best-effort.
-    }
   }
 
   // Externe Ausfälle (api-football) einmal pro Lauf, mit Freshness-Guard.
@@ -393,7 +396,6 @@ export async function runCollectForUser(
   const targets = leagueId ? leagues.filter((l) => l.leagueId === leagueId) : leagues;
   if (targets.length === 0) return [{ leagueId: leagueId ?? "", error: "Liga nicht aktiv." }];
 
-  const kbUserId = (await getConnectionState(userId))?.kbUserId ?? null;
   const results: LeagueIngestResult[] = [];
   for (const l of targets) {
     const r = await collectLeagueWide(l.leagueId, token);
@@ -404,12 +406,10 @@ export async function runCollectForUser(
         // isolieren
       }
     }
-    if (kbUserId) {
-      try {
-        await backfillOverpay(l.leagueId, kbUserId, token);
-      } catch {
-        // Overpay-Backfill best-effort.
-      }
+    try {
+      await backfillOverpay(l.leagueId, token);
+    } catch {
+      // Overpay-Backfill best-effort (liga-weit).
     }
     results.push(r);
     await politeDelay();

@@ -175,7 +175,7 @@ export async function upsertManagerSnapshots(snapshots: SnapshotRow[]): Promise<
 export async function getBuyTransfersMissingMv(
   leagueId: string,
   managerId: string,
-  limit = 20,
+  limit = 40,
 ): Promise<{ id: string; player_id: string; ts: string; price: number }[]> {
   const supabase = getServiceClient();
   const { data } = await supabase
@@ -186,6 +186,35 @@ export async function getBuyTransfersMissingMv(
     .eq("direction", "buy")
     .is("mv_at_time", null)
     .not("ts", "is", null)
+    // Jüngste Käufe zuerst — sie tragen das aktuelle „Panik-Barometer".
+    .order("ts", { ascending: false })
+    .limit(limit);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    player_id: r.player_id as string,
+    ts: r.ts as string,
+    price: (r.price as number) ?? 0,
+  }));
+}
+
+/**
+ * Käufe OHNE Marktwert-zum-Zeitpunkt liga-weit (alle Manager) — für das
+ * liga-weite Overpay-/Panik-Barometer. Marktwert ist spielerbezogen, daher
+ * unabhängig vom Käufer füllbar. Jüngste zuerst.
+ */
+export async function getBuyTransfersMissingMvLeague(
+  leagueId: string,
+  limit = 40,
+): Promise<{ id: string; player_id: string; ts: string; price: number }[]> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("transfers")
+    .select("id, player_id, ts, price")
+    .eq("league_id", leagueId)
+    .eq("direction", "buy")
+    .is("mv_at_time", null)
+    .not("ts", "is", null)
+    .order("ts", { ascending: false })
     .limit(limit);
   return (data ?? []).map((r) => ({
     id: r.id as string,

@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { resolveLeague, getBidAdvisor } from "../../lib/db/queries";
+import { resolveLeague, getBidAdvisor, getPanicBarometer } from "../../lib/db/queries";
 import { computeAutoTargets } from "../../lib/compute/autotargets";
 import { eur } from "../../lib/format";
 import MarketRadar from "../../components/MarketRadar";
+import PanicBarometer from "../../components/PanicBarometer";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export default async function MarktPage({
   }
 
   const { listings, advice } = await getBidAdvisor(league);
+  const panic = await getPanicBarometer(league);
   const showBids = league.startBudget > 0;
   const adviceObj = Object.fromEntries(advice);
   const href = (base: string) => `${base}?league=${encodeURIComponent(league.id)}`;
@@ -62,6 +64,10 @@ export default async function MarktPage({
             {league.name} · {listings.length} Spieler am Markt
           </p>
         </div>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <PanicBarometer data={panic} leagueId={league.id} />
       </div>
 
       {autoTargets.length > 0 && (

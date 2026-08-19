@@ -1129,6 +1129,122 @@ export async function getOverpay(league: LeagueLite, managerId: string): Promise
   return { avg: count > 0 ? Math.round(total / count) : null, total, count };
 }
 
+// ---------- Panik-Barometer (Overpay-Stimmung der Liga) ----------
+
+/** Zeitfenster für das Barometer (Tage) und der Overpay-Anteil für „volle Panik". */
+const PANIC_WINDOW_DAYS = 14;
+const PANIC_FULL_RATIO = 0.4; // 40 % über Marktwert im Schnitt = rot
+
+export interface PanicBuy {
+  playerId: string;
+  playerName: string;
+  managerId: string;
+  managerName: string;
+  price: number;
+  mv: number;
+  overpay: number; // price − mv
+  overpayPct: number; // overpay / mv
+  ts: string | null;
+}
+
+export interface PanicBarometer {
+  /** Wertgewichteter Overpay-Anteil der Liga: Σ Overpay ÷ Σ Marktwert. null = keine Daten. */
+  ratio: number | null;
+  /** 0..1 Panik-Score (für den Tacho). 0 = ruhig/grün, 1 = Panik/rot. */
+  score: number;
+  /** Anzahl Käufe im Fenster (mit Marktwert-Basis). */
+  count: number;
+  windowDays: number;
+  /** Ø €-Overpay je Kauf im Fenster. */
+  avgOverpay: number | null;
+  /** Größte Overpay-Käufe (in %) im Fenster. */
+  topBuys: PanicBuy[];
+}
+
+/**
+ * Panik-Barometer: misst die durchschnittlichen Transfer-Overpays der Liga im
+ * jüngsten Zeitfenster. Wertgewichtet (Σ Overpay ÷ Σ Marktwert), damit teure
+ * Käufe nicht durch prozentuale Ausreißer bei billigen Spielern verzerrt werden.
+ * Viel Overpay = überhitzte/panische Liga (rot), wenig/negativ = ruhig (grün).
+ */
+export async function getPanicBarometer(league: LeagueLite): Promise<PanicBarometer> {
+  const empty: PanicBarometer = {
+    ratio: null,
+    score: 0,
+    count: 0,
+    windowDays: PANIC_WINDOW_DAYS,
+    avgOverpay: null,
+    topBuys: [],
+  };
+  const supabase = await getReadClient();
+  if (!supabase) return empty;
+
+  const sinceIso = new Date(Date.now() - PANIC_WINDOW_DAYS * 86_400_000).toISOString();
+  const { data } = await supabase
+    .from("transfers")
+    .select("player_id, to_manager, price, mv_at_time, ts")
+    .eq("league_id", league.id)
+    .eq("direction", "buy")
+    .not("mv_at_time", "is", null)
+    .gte("ts", sinceIso)
+    .order("ts", { ascending: false });
+  const rows = (data ?? []).filter((r) => ((r.mv_at_time as number) ?? 0) > 0);
+  if (rows.length === 0) return empty;
+
+  let sumOverpay = 0;
+  let sumMv = 0;
+  for (const r of rows) {
+    const mv = r.mv_at_time as number;
+    sumOverpay += ((r.price as number) ?? 0) - mv;
+    sumMv += mv;
+  }
+  const ratio = sumMv > 0 ? sumOverpay / sumMv : null;
+  const score = ratio == null ? 0 : Math.max(0, Math.min(1, ratio / PANIC_FULL_RATIO));
+  const avgOverpay = Math.round(sumOverpay / rows.length);
+
+  // Namen für die Top-Panikkäufe.
+  const pids = [...new Set(rows.map((r) => r.player_id as string))];
+  const mids = [...new Set(rows.map((r) => r.to_manager as string))];
+  const pmap = new Map<string, string>();
+  if (pids.length > 0) {
+    const { data: pd } = await supabase.from("players").select("id, name").in("id", pids);
+    for (const p of pd ?? []) pmap.set(p.id as string, p.name as string);
+  }
+  const nmap = new Map<string, string>();
+  if (mids.length > 0) {
+    const { data: md } = await supabase
+      .from("managers")
+      .select("id, name")
+      .eq("league_id", league.id)
+      .in("id", mids);
+    for (const m of md ?? []) nmap.set(m.id as string, m.name as string);
+  }
+
+  const topBuys: PanicBuy[] = rows
+    .map((r) => {
+      const mv = r.mv_at_time as number;
+      const price = (r.price as number) ?? 0;
+      const pid = r.player_id as string;
+      const mid = r.to_manager as string;
+      return {
+        playerId: pid,
+        playerName: pmap.get(pid) ?? `#${pid}`,
+        managerId: mid,
+        managerName: nmap.get(mid) ?? mid,
+        price,
+        mv,
+        overpay: price - mv,
+        overpayPct: (price - mv) / mv,
+        ts: (r.ts as string) ?? null,
+      };
+    })
+    .filter((b) => b.overpay > 0)
+    .sort((a, b) => b.overpayPct - a.overpayPct)
+    .slice(0, 5);
+
+  return { ratio, score, count: rows.length, windowDays: PANIC_WINDOW_DAYS, avgOverpay, topBuys };
+}
+
 /**
  * Bid-Advisor: Marktangebote + Gebotsberatung (stärkstes konkurrierendes
  * Max-Gebot je Spieler). `advice` ist leer/„unknown", wenn keine belastbaren
