@@ -10,6 +10,7 @@ import {
   ManagerDashboardSchema,
   SquadSchema,
   PlayerMarketValueSchema,
+  TeamProfileSchema,
   type Ranking,
   type Overview,
   type MeBudget,
@@ -19,6 +20,7 @@ import {
   type ManagerDashboard,
   type Squad,
   type PlayerMarketValue,
+  type TeamProfile,
 } from "./schemas";
 
 /**
@@ -143,6 +145,22 @@ export async function fetchManagerSquad(
     opts,
   );
   return SquadSchema.parse(raw);
+}
+
+/**
+ * `/v4/competitions/{cid}/teams/{teamId}/teamprofile` — Kader eines Bundesliga-
+ * Teams inkl. Marktwert je Spieler (`it[].mv`). Grundlage für den Voll-Pool.
+ */
+export async function fetchTeamProfile(
+  competitionId: string,
+  teamId: string,
+  opts: EndpointOptions,
+): Promise<TeamProfile> {
+  const raw = await kbFetch<unknown>(
+    `/v4/competitions/${competitionId}/teams/${teamId}/teamprofile`,
+    opts,
+  );
+  return TeamProfileSchema.parse(raw);
 }
 
 /** `/v4/leagues/{lid}/market` — aktuelles Marktangebot. */

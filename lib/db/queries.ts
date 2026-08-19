@@ -1245,6 +1245,51 @@ export async function getPanicBarometer(league: LeagueLite): Promise<PanicBarome
   return { ratio, score, count: rows.length, windowDays: PANIC_WINDOW_DAYS, avgOverpay, topBuys };
 }
 
+// ---------- Markt-Potenzial (freier Marktwert vs. Kaufkraft) ----------
+
+export interface MarketPotential {
+  /** Gesamter Bundesliga-Marktwert (Σ aller Team-Pools). null = noch nicht erfasst. */
+  poolMV: number | null;
+  /** In der Liga gebundener Kaderwert (Σ Kaderwerte aller aktiven Manager). */
+  ownedMV: number;
+  /** Freier Marktwert = Pool − gebunden (nicht besessene Spieler). */
+  freeMV: number | null;
+  /** Gesamt-Kontostände aller aktiven Manager (Kaufkraft). */
+  totalCash: number;
+  /** Kaufkraft-Deckung = Kontostände ÷ freier Marktwert (0..1+; null wenn n/a). */
+  coverage: number | null;
+  /** Anteil des Pools, der bereits gebunden ist (0..1). */
+  ownedShare: number | null;
+  /** Anzahl erfasster Teams (Vollständigkeit; 18 = komplett). */
+  teamCount: number;
+}
+
+/**
+ * Markt-Potenzial: wie viel Spieler-Wert noch frei im Markt „schlummert"
+ * (Bundesliga-Pool − in der Liga gebundene Kaderwerte) und wie er sich zur
+ * Kaufkraft (Summe der Kontostände) verhält. Pool aus market_pool (Voll-Pool-
+ * Sync), gebundener Wert & Kontostände aus getManagerTable.
+ */
+export async function getMarketPotential(league: LeagueLite): Promise<MarketPotential | null> {
+  const supabase = await getReadClient();
+  if (!supabase) return null;
+
+  const { data: pool } = await supabase.from("market_pool").select("total_mv").eq("competition_id", "1");
+  const teamCount = (pool ?? []).length;
+  const poolMV = teamCount > 0 ? (pool ?? []).reduce((s, r) => s + ((r.total_mv as number) ?? 0), 0) : null;
+
+  const { rows } = await getManagerTable(league);
+  const active = rows.filter((r) => r.active);
+  const ownedMV = active.reduce((s, r) => s + (r.teamValue ?? 0), 0);
+  const totalCash = active.reduce((s, r) => s + (r.cash ?? 0), 0);
+
+  const freeMV = poolMV != null ? Math.max(0, poolMV - ownedMV) : null;
+  const coverage = freeMV != null && freeMV > 0 ? totalCash / freeMV : null;
+  const ownedShare = poolMV != null && poolMV > 0 ? ownedMV / poolMV : null;
+
+  return { poolMV, ownedMV, freeMV, totalCash, coverage, ownedShare, teamCount };
+}
+
 /**
  * Bid-Advisor: Marktangebote + Gebotsberatung (stärkstes konkurrierendes
  * Max-Gebot je Spieler). `advice` ist leer/„unknown", wenn keine belastbaren

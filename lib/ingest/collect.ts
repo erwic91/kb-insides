@@ -46,7 +46,7 @@ import {
 } from "../db/connections";
 import type { PlayerRow } from "./market";
 import { syncExternalInjuries } from "./externalNews";
-import { probeFullPool } from "../kickbase/probeFullPool";
+import { syncMarketPool } from "./marketPool";
 
 const SQUAD_POS: Record<number, string> = { 1: "TW", 2: "ABW", 3: "MF", 4: "ANG" };
 const posLabel = (pos: number | null | undefined): string | null =>
@@ -363,13 +363,13 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     // externe News best-effort.
   }
 
-  // Voll-Pool-Endpunkt-Discovery (einmalig, Freshness-Guard) — für Markt-Potenzial.
+  // Voll-Pool-Marktwert (Markt-Potenzial) — einmal pro Lauf, Freshness-Guard.
   const anyToken = [...leagueToken.values()][0];
   if (anyToken) {
     try {
-      await probeFullPool(anyToken);
+      await syncMarketPool(anyToken);
     } catch {
-      // Discovery best-effort.
+      // Pool-Sync best-effort.
     }
   }
 
@@ -433,11 +433,11 @@ export async function runCollectForUser(
     // externe News best-effort.
   }
 
-  // Voll-Pool-Endpunkt-Discovery (einmalig, Freshness-Guard) — für Markt-Potenzial.
+  // Voll-Pool-Marktwert (Markt-Potenzial) — einmal pro Refresh, Freshness-Guard.
   try {
-    await probeFullPool(token);
+    await syncMarketPool(token);
   } catch {
-    // Discovery best-effort.
+    // Pool-Sync best-effort.
   }
 
   return results;

@@ -202,3 +202,22 @@ export const PlayerMarketValueSchema = z
   })
   .passthrough();
 export type PlayerMarketValue = z.infer<typeof PlayerMarketValueSchema>;
+
+/** Ein Spieler im Team-Profil (`it[]`) — nur die für den Pool nötigen Felder. */
+export const TeamProfilePlayerSchema = z
+  .object({
+    i: z.string(), // Spieler-ID
+    mv: z.coerce.number().nullish(), // Marktwert
+  })
+  .passthrough();
+
+/** Antwort von `/v4/competitions/{cid}/teams/{teamId}/teamprofile`. */
+export const TeamProfileSchema = z
+  .object({
+    tid: z.string().nullish(), // Team-ID
+    tn: z.string().nullish(), // Teamname
+    tv: z.coerce.number().nullish(), // Teamwert (Σ MV)
+    it: z.array(TeamProfilePlayerSchema).default([]), // Spieler
+  })
+  .passthrough();
+export type TeamProfile = z.infer<typeof TeamProfileSchema>;
