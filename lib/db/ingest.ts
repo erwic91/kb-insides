@@ -198,6 +198,30 @@ export async function getBuyTransfersMissingMv(
 }
 
 /**
+ * Jüngster bereits gespeicherter Transfer-Zeitpunkt je Manager (als Käufer ODER
+ * Verkäufer). Basis fürs INKREMENTELLE Nachladen: der Collector muss dann nur
+ * neue Transfers ab diesem Zeitpunkt holen statt der vollen Historie.
+ */
+export async function getLatestTransferTsByManager(leagueId: string): Promise<Map<string, string>> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("transfers")
+    .select("ts, to_manager, from_manager")
+    .eq("league_id", leagueId)
+    .not("ts", "is", null);
+  const out = new Map<string, string>();
+  for (const r of data ?? []) {
+    const ts = r.ts as string;
+    for (const mid of [r.to_manager as string | null, r.from_manager as string | null]) {
+      if (!mid) continue;
+      const cur = out.get(mid);
+      if (!cur || ts > cur) out.set(mid, ts);
+    }
+  }
+  return out;
+}
+
+/**
  * Käufe OHNE Marktwert-zum-Zeitpunkt liga-weit (alle Manager) — für das
  * liga-weite Overpay-/Panik-Barometer. Marktwert ist spielerbezogen, daher
  * unabhängig vom Käufer füllbar. Jüngste zuerst.

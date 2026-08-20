@@ -33,6 +33,7 @@ import {
   upsertManagerTvDaily,
   upsertPlayerMvDaily,
   getBuyTransfersMissingMvLeague,
+  getLatestTransferTsByManager,
   updateTransferMvAtTime,
   type SquadPlayerRow,
   type ManagerTvDailyRow,
@@ -103,6 +104,9 @@ async function collectLeagueWide(
 
     const snapById = new Map(rows.snapshots.map((s) => [s.manager_id, s]));
     const { trackingSince } = await getLeagueMoneyBasis(leagueId);
+    // Inkrementell: pro Manager nur Transfers NACH dem jüngsten bereits
+    // gespeicherten holen (statt die ganze Historie neu zu paginieren).
+    const latestTransferTs = await getLatestTransferTsByManager(leagueId);
 
     let transferCount = 0;
     const squadPlayers: SquadPlayerRow[] = [];
@@ -160,10 +164,11 @@ async function collectLeagueWide(
       }
 
       try {
-        const tr = await fetchAllTransfers(leagueId, manager.id, {
-          token,
-          since: trackingSince,
-        });
+        // Ab dem jüngsten bekannten Transfer dieses Managers (sonst ab
+        // Tracking-Start). Bereits gespeicherte bleiben in der DB — hier werden
+        // nur neue nachgeladen.
+        const since = latestTransferTs.get(manager.id) ?? trackingSince;
+        const tr = await fetchAllTransfers(leagueId, manager.id, { token, since });
         const transferRows = parseTransfers(tr, leagueId, manager.id);
         await upsertTransfers(transferRows);
         transferCount += transferRows.length;
@@ -417,28 +422,15 @@ export async function runCollectForUser(
         // isolieren
       }
     }
-    try {
-      await backfillOverpay(l.leagueId, token);
-    } catch {
-      // Overpay-Backfill best-effort (liga-weit).
-    }
     results.push(r);
     await politeDelay();
   }
 
-  // Externe Ausfälle (api-football) — einmal pro Refresh, Freshness-Guard schützt das Limit.
-  try {
-    await syncExternalInjuries();
-  } catch {
-    // externe News best-effort.
-  }
-
-  // Voll-Pool-Marktwert (Markt-Potenzial) — einmal pro Refresh, Freshness-Guard.
-  try {
-    await syncMarketPool(token);
-  } catch {
-    // Pool-Sync best-effort.
-  }
+  // Bewusst NICHT im manuellen Refresh: Overpay-Backfill (bis zu 40 Kurven-
+  // Calls), Voll-Pool-Sync (18 Team-Calls) und externe Ausfälle. Diese liefern
+  // Hintergrund-Kennzahlen (Panik-Barometer, Markt-Potenzial, News) in täglicher
+  // Kadenz und laufen im nächtlichen Cron — so bleibt „Aktualisieren" schnell
+  // (Ranking, Kader, neue Transfers, Kontostand).
 
   return results;
 }
