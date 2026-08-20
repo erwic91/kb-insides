@@ -30,13 +30,11 @@ import {
   markIsMe,
   getLeagueMoneyBasis,
   replaceSquadPlayers,
-  upsertManagerTvDaily,
   upsertPlayerMvDaily,
   getBuyTransfersMissingMvLeague,
   getLatestTransferTsByManager,
   updateTransferMvAtTime,
   type SquadPlayerRow,
-  type ManagerTvDailyRow,
   type PlayerMvDailyRow,
 } from "../db/ingest";
 import {
@@ -48,6 +46,7 @@ import {
 import type { PlayerRow } from "./market";
 import { syncExternalInjuries } from "./externalNews";
 import { syncMarketPool } from "./marketPool";
+import { snapshotManagerMetrics } from "./managerMetrics";
 
 const SQUAD_POS: Record<number, string> = { 1: "TW", 2: "ABW", 3: "MF", 4: "ANG" };
 const posLabel = (pos: number | null | undefined): string | null =>
@@ -190,15 +189,11 @@ async function collectLeagueWide(
     // erzeugt ein irreführendes „0 %" gegenüber dem gestrigen Abend-Snapshot.
     if (opts.recordDailyTv) {
       const snapDate = new Date().toISOString().slice(0, 10);
-      const tvDaily: ManagerTvDailyRow[] = rows.snapshots
-        .filter((s) => s.team_value != null)
-        .map((s) => ({
-          league_id: leagueId,
-          manager_id: s.manager_id,
-          snap_date: snapDate,
-          team_value: s.team_value,
-        }));
-      if (tvDaily.length > 0) await upsertManagerTvDaily(tvDaily);
+      // Tages-Snapshot der Manager-Kennzahlen (Kaderwert + rekonstruiertes Konto
+      // + Punkte) → Basis für die sortier-reaktiven Platzierungs-Pfeile. Liest die
+      // gerade geschriebenen manager_snapshots und rekonstruiert das Konto
+      // (manager-neutral, identisch zu getManagerTable ohne „eigenen exakten"-Fall).
+      await snapshotManagerMetrics(leagueId);
 
       // Täglicher Marktwert je Kaderspieler → „Entwicklung seit gestern" für
       // ALLE Manager (nicht nur den eigenen Kader). Kein zusätzlicher API-Call:

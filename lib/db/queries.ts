@@ -38,8 +38,12 @@ export interface ManagerTableRow {
   teamValue: number | null;
   /** Kaderwert-Veränderung zum Vortag in % (0.05 = +5 %); null wenn unbekannt. */
   teamValueDeltaPct: number | null;
-  /** Platzierungs-Änderung durch den letzten Spieltag (+2 = 2 Ränge hoch); null/0 = keine. */
-  rankDelta: number | null;
+  /** Kaderwert am Vortag (letzter Snapshot vor heute) — für sortier-reaktive Rang-Pfeile. */
+  prevTeamValue: number | null;
+  /** Rekonstruiertes Konto am Vortag — für sortier-reaktive Rang-Pfeile. */
+  prevCash: number | null;
+  /** Punkte am Vortag — für sortier-reaktive Rang-Pfeile. */
+  prevPoints: number | null;
   points: number | null;
   streak: number | null;
   squadSize: number | null;
@@ -158,6 +162,43 @@ async function getTeamValueDeltas(leagueId: string): Promise<Map<string, number>
     if (arr.length < 2) continue;
     const [today, prev] = arr; // [0] jüngster, [1] Vortag
     if (prev!.tv > 0) out.set(mid, (today!.tv - prev!.tv) / prev!.tv);
+  }
+  return out;
+}
+
+/**
+ * Kennzahlen-Stand am Vortag je Manager (Kaderwert, rekonstruiertes Konto,
+ * Punkte) aus manager_tv_daily — der jüngste Snapshot VOR heute. Grundlage für
+ * die sortier-reaktiven Platzierungs-Pfeile: der Client vergleicht den Rang der
+ * aktuell sortierten Spalte gegen den Rang, den derselbe Wert gestern ergab.
+ * Leer, solange kein Snapshot mit snap_date < heute vorliegt.
+ */
+interface PrevMetric {
+  teamValue: number | null;
+  cash: number | null;
+  points: number | null;
+}
+async function getPrevManagerMetrics(leagueId: string): Promise<Map<string, PrevMetric>> {
+  const supabase = await getReadClient();
+  const out = new Map<string, PrevMetric>();
+  if (!supabase) return out;
+  const today = new Date().toISOString().slice(0, 10);
+  const { data } = await supabase
+    .from("manager_tv_daily")
+    .select("manager_id, snap_date, team_value, cash, points")
+    .eq("league_id", leagueId)
+    .lt("snap_date", today)
+    .order("snap_date", { ascending: false });
+  if (!data) return out;
+  // Daten absteigend → je Manager der erste (jüngste) Treffer vor heute.
+  for (const r of data) {
+    const mid = r.manager_id as string;
+    if (out.has(mid)) continue;
+    out.set(mid, {
+      teamValue: (r.team_value as number) ?? null,
+      cash: (r.cash as number) ?? null,
+      points: (r.points as number) ?? null,
+    });
   }
   return out;
 }
@@ -325,14 +366,16 @@ export async function getManagerTable(
   const transfers = await getTransfersByManager(league.id);
   // „Ich" + exakter Kontostand kommen jetzt pro Nutzer aus league_access /
   // user_budget (nicht mehr aus managers.is_me / snapshots.cash_actual).
-  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds, bonusPoints] = await Promise.all([
-    getMyAccess(),
-    getMyBudget(league.id),
-    getAdjustmentSums(league.id),
-    getTeamValueDeltas(league.id),
-    getHiddenManagerIds(league.id),
-    getMatchdayBonusPoints(league.id),
-  ]);
+  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds, bonusPoints, prevMetrics] =
+    await Promise.all([
+      getMyAccess(),
+      getMyBudget(league.id),
+      getAdjustmentSums(league.id),
+      getTeamValueDeltas(league.id),
+      getHiddenManagerIds(league.id),
+      getMatchdayBonusPoints(league.id),
+      getPrevManagerMetrics(league.id),
+    ]);
   // Spieltagsbonus (Punkte × 1000 €) nur im Manager-Modus (gameMode 2).
   const bonusFor = (mid: string) =>
     league.gameMode === 2 ? (bonusPoints.get(mid) ?? 0) * MATCHDAY_BONUS_PER_POINT : 0;
@@ -388,6 +431,7 @@ export async function getManagerTable(
     const bid = cash != null && teamValue != null ? maxBid(cash, teamValue) : null;
     const total = cash != null && teamValue != null ? cash + teamValue : null;
     const liquidity = total != null && total > 0 && cash != null ? cash / total : null;
+    const prev = prevMetrics.get(mid);
 
     return {
       id: mid,
@@ -395,7 +439,9 @@ export async function getManagerTable(
       isMe,
       teamValue,
       teamValueDeltaPct: tvDeltas.get(mid) ?? null,
-      rankDelta: null, // unten aus points_series berechnet (nach Hidden-Filter)
+      prevTeamValue: prev?.teamValue ?? null,
+      prevCash: prev?.cash ?? null,
+      prevPoints: prev?.points ?? null,
       points: (s.points as number) ?? null,
       streak: (s.streak as number) ?? null,
       squadSize: (s.squad_size as number) ?? null,
@@ -423,42 +469,10 @@ export async function getManagerTable(
     return false;
   });
 
-  // Platzierungs-Änderung durch den JÜNGSTEN gespielten Spieltag: Rang nach den
-  // Punkten bis inkl. diesem Spieltag vs. Rang nach den Punkten davor — beides
-  // aus der Spieltags-Punkteserie (points_series). Kein zusätzlicher Speicher.
-  //  - Nur sichtbare, aktive Manager; Tiebreaker manager_id (gleiche Punkte →
-  //    keine Scheinbewegung).
-  //  - „letzter Spieltag" = letzter Index mit Punkten (ignoriert angehängte
-  //    0-Spieltage) → der Indikator bleibt zwischen Spieltagen stehen.
-  //  - Erst ab dem 2. Spieltag (davor gibt es keine sinnvolle Vor-Platzierung).
-  const activeVisible = visible.filter((r) => r.active);
-  const cumPoints = (series: (number | null)[] | null, upto: number) =>
-    (series ?? []).slice(0, upto).reduce((sum: number, x) => sum + (x ?? 0), 0);
-  const maxLen = activeVisible.reduce((m, r) => Math.max(m, (r.pointsSeries ?? []).length), 0);
-  let lastPlayed = -1;
-  for (let i = maxLen - 1; i >= 0; i--) {
-    if (activeVisible.some((r) => ((r.pointsSeries ?? [])[i] ?? 0) !== 0)) {
-      lastPlayed = i;
-      break;
-    }
-  }
-  if (lastPlayed >= 1) {
-    const rankMap = (upto: number) => {
-      const arr = activeVisible
-        .map((r) => ({ id: r.id, v: cumPoints(r.pointsSeries, upto) }))
-        .sort((a, b) => b.v - a.v || a.id.localeCompare(b.id));
-      const m = new Map<string, number>();
-      arr.forEach((x, i) => m.set(x.id, i + 1));
-      return m;
-    };
-    const rankNow = rankMap(lastPlayed + 1);
-    const rankPrev = rankMap(lastPlayed);
-    for (const r of activeVisible) {
-      const now = rankNow.get(r.id);
-      const prev = rankPrev.get(r.id);
-      r.rankDelta = now != null && prev != null ? prev - now : null; // + = hoch
-    }
-  }
+  // Platzierungs-Pfeile werden jetzt im Client (ManagerTable) berechnet — sie
+  // reagieren auf die aktuell sortierte Spalte (Gesamtwert, Kaderwert, Konto, …)
+  // und vergleichen den heutigen Rang gegen den Rang, den der Vortags-Snapshot
+  // (prevTeamValue/prevCash/prevPoints) für dieselbe Kennzahl ergibt.
 
   // Sortierung: aktive nach Saisonpunkten, inaktive ans Ende.
   visible.sort((a, b) => {

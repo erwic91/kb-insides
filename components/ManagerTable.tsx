@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import type { ManagerTableRow } from "../lib/db/queries";
+import { maxBid } from "../lib/compute/reconstruct";
 import { eur, eurFull, num, pct } from "../lib/format";
 import InfoDot from "./InfoDot";
 
@@ -19,6 +20,68 @@ type Key =
 
 /** Euro-Spalten: hier zeigt der Hover den exakten Wert bis auf den Euro. */
 const EURO_KEYS = new Set<Key>(["teamValue", "cash", "loginBonus", "maxBid", "total"]);
+
+/** Spalten, für die ein Platzierungs-Pfeil (Rang vs. Vortag) sinnvoll ist. */
+const RANK_KEYS = new Set<Key>(["teamValue", "points", "cash", "maxBid", "total", "liquidity"]);
+
+/** Kurzlabel der sortierten Kennzahl — für den Tooltip des Rang-Pfeils. */
+const RANK_LABEL: Partial<Record<Key, string>> = {
+  teamValue: "Kaderwert",
+  points: "Punkte",
+  cash: "Kontostand",
+  maxBid: "Maximalgebot",
+  total: "Gesamtwert",
+  liquidity: "Liquidität",
+};
+
+/** Heutiger Wert der Kennzahl `k` (für die Rang-Pfeile). */
+function curVal(r: ManagerTableRow, k: Key): number | null {
+  switch (k) {
+    case "teamValue":
+      return r.teamValue;
+    case "points":
+      return r.points;
+    case "cash":
+      return r.cash;
+    case "maxBid":
+      return r.maxBid;
+    case "total":
+      return r.total;
+    case "liquidity":
+      return r.liquidity;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Wert der Kennzahl `k` am Vortag, aus dem Snapshot (prevTeamValue/prevCash/
+ * prevPoints). Abgeleitete Kennzahlen (Max-Gebot, Gesamt, Liquidität) werden aus
+ * Vortags-Kaderwert + Vortags-Konto nach denselben Regeln wie heute berechnet.
+ */
+function prevVal(r: ManagerTableRow, k: Key): number | null {
+  const pt = r.prevTeamValue;
+  const pc = r.prevCash;
+  switch (k) {
+    case "teamValue":
+      return pt;
+    case "points":
+      return r.prevPoints;
+    case "cash":
+      return pc;
+    case "maxBid":
+      return pc != null && pt != null ? maxBid(pc, pt) : null;
+    case "total":
+      return pc != null && pt != null ? pc + pt : null;
+    case "liquidity": {
+      if (pc == null || pt == null) return null;
+      const tot = pc + pt;
+      return tot > 0 ? pc / tot : null;
+    }
+    default:
+      return null;
+  }
+}
 
 interface Col {
   key: Key;
@@ -126,6 +189,34 @@ export default function ManagerTable({
     setSort((s) => (s.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: -1 }));
   const arrow = (k: Key) => (sort.key === k ? (sort.dir < 0 ? " ↓" : " ↑") : "");
 
+  // Platzierungs-Pfeile REAGIEREN auf die sortierte Spalte: Rang der aktuell
+  // sortierten Kennzahl (heute) vs. Rang, den der Vortags-Snapshot derselben
+  // Kennzahl ergibt. Positiv = seit gestern hochgerückt. Nur aktive Manager mit
+  // heutigem UND Vortags-Wert (sonst kein sinnvoller Vergleich).
+  const rankDeltas = useMemo(() => {
+    const out = new Map<string, number>();
+    if (!RANK_KEYS.has(sort.key)) return out;
+    const pool = rows.filter(
+      (r) => r.active && curVal(r, sort.key) != null && prevVal(r, sort.key) != null,
+    );
+    if (pool.length < 2) return out;
+    const rankBy = (get: (r: ManagerTableRow) => number | null) => {
+      const arr = [...pool].sort((a, b) => (get(b) ?? 0) - (get(a) ?? 0) || a.id.localeCompare(b.id));
+      const m = new Map<string, number>();
+      arr.forEach((x, i) => m.set(x.id, i + 1));
+      return m;
+    };
+    const now = rankBy((r) => curVal(r, sort.key));
+    const prev = rankBy((r) => prevVal(r, sort.key));
+    for (const r of pool) {
+      const n = now.get(r.id);
+      const p = prev.get(r.id);
+      if (n != null && p != null && n !== p) out.set(r.id, p - n);
+    }
+    return out;
+  }, [rows, sort.key]);
+  const rankLabel = RANK_LABEL[sort.key] ?? "Kennzahl";
+
   const leagueHref = (base: string) => `${base}?league=${encodeURIComponent(leagueId)}`;
 
   return (
@@ -156,20 +247,24 @@ export default function ManagerTable({
                   <Link href={leagueHref(`/manager/${r.id}`)} className="nm linklike">
                     {r.name}
                   </Link>
-                  {r.rankDelta != null && r.rankDelta !== 0 && (
-                    <span
-                      title="Veränderung der Platzierung durch den letzten Spieltag"
-                      style={{
-                        fontFamily: "var(--mono)",
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: r.rankDelta > 0 ? "var(--gain)" : "var(--loss)",
-                      }}
-                    >
-                      {r.rankDelta > 0 ? "▲" : "▼"}
-                      {Math.abs(r.rankDelta)}
-                    </span>
-                  )}
+                  {(() => {
+                    const d = rankDeltas.get(r.id);
+                    if (d == null || d === 0) return null;
+                    return (
+                      <span
+                        title={`${rankLabel}: ${d > 0 ? "+" : "−"}${Math.abs(d)} Plätze seit gestern`}
+                        style={{
+                          fontFamily: "var(--mono)",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: d > 0 ? "var(--gain)" : "var(--loss)",
+                        }}
+                      >
+                        {d > 0 ? "▲" : "▼"}
+                        {Math.abs(d)}
+                      </span>
+                    );
+                  })()}
                   {r.isMe && <span className="tag">du</span>}
                   {!r.active && <span className="warnflag">inaktiv</span>}
                 </div>
