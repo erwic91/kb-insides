@@ -277,13 +277,16 @@ export default function ManagerTable({
                 // wirkt wie ein Fehler und wird daher weggelassen.
                 const rawDelta = c.key === "teamValue" ? r.teamValueDeltaPct : null;
                 const delta = rawDelta != null && Math.abs(rawDelta) * 100 >= 0.05 ? rawDelta : null;
+                // Negativer Kontostand / negative Liquidität = im Minus → rot.
+                const negative =
+                  (c.key === "cash" || c.key === "liquidity") && typeof raw === "number" && raw < 0;
+                const style = c.highlight
+                  ? { fontWeight: 600, color: "var(--signal)" }
+                  : negative
+                    ? { fontWeight: 600, color: "var(--loss)" }
+                    : undefined;
                 return (
-                  <td
-                    key={c.key}
-                    className="num"
-                    title={exact}
-                    style={c.highlight ? { fontWeight: 600, color: "var(--signal)" } : undefined}
-                  >
+                  <td key={c.key} className="num" title={exact} style={style}>
                     {c.render(r)}
                     {delta != null && (
                       <span
