@@ -51,6 +51,10 @@ export async function kbFetch<T = unknown>(
   const url = path.startsWith("http") ? path : `${KICKBASE_BASE_URL}${path}`;
   const headers: Record<string, string> = {
     Accept: "application/json",
+    // Deutsches Locale mitschicken, damit Kickbase die Session (und damit den
+    // Account) auf Deutsch/Bundesliga lässt und nicht auf „international"
+    // umstellt (sonst verschwinden u. a. die Challenges). Spiegelt die echte App.
+    "Accept-Language": "de-DE,de;q=0.9",
     "User-Agent": USER_AGENT,
   };
   if (token) headers.Authorization = `Bearer ${token}`;
