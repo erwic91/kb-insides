@@ -1,12 +1,6 @@
 import Link from "next/link";
-import {
-  resolveLeague,
-  getPlayerDetail,
-  getPlayerMarketValueCurve,
-  getPlayerHolder,
-} from "../../../lib/db/queries";
-import { eur, eurFull, date } from "../../../lib/format";
-import LineChart from "../../../components/LineChart";
+import { resolveLeague, getPlayerCard } from "../../../lib/db/queries";
+import PlayerCard from "../../../components/PlayerCard";
 
 export const dynamic = "force-dynamic";
 
@@ -38,13 +32,9 @@ export default async function PlayerPage({
     );
   }
 
-  const [p, curve, holder] = await Promise.all([
-    getPlayerDetail(league, id),
-    getPlayerMarketValueCurve(league, id),
-    getPlayerHolder(league, id),
-  ]);
+  const data = await getPlayerCard(league, id);
 
-  if (!p) {
+  if (!data) {
     return (
       <main className="wrap">
         <div className="empty">
@@ -58,166 +48,15 @@ export default async function PlayerPage({
     );
   }
 
-  const maxMv = Math.max(1, ...p.mvHistory.map((h) => h.marketValue ?? 0));
-  const hasCurve = curve != null && curve.points.length >= 2;
-
-  // 14-Tage-Trend aus der Marktwert-Kurve (letzter Punkt vs. Punkt ~14 Tage her).
-  let trend14: number | null = null;
-  if (hasCurve) {
-    const pts = curve!.points;
-    const last = pts[pts.length - 1]!;
-    const target = Date.parse(last.date) - 14 * 86_400_000;
-    let base = pts[0]!;
-    for (const pt of pts) {
-      if (Date.parse(pt.date) <= target) base = pt;
-      else break;
-    }
-    if (base.mv > 0) trend14 = (last.mv - base.mv) / base.mv;
-  }
-  const trendTxt =
-    trend14 == null
-      ? "—"
-      : `${trend14 >= 0 ? "+" : "−"}${(Math.abs(trend14) * 100).toFixed(1)} %`;
-
   return (
     <main className="wrap">
       <div className="crumb">
         <Link href={leagueHref("/", league.id)}>Dashboard</Link> ·{" "}
         <Link href={leagueHref("/markt", league.id)}>Marktradar</Link>
       </div>
-      <div className="page-head">
-        <span className="eyebrow">SPIELERAKTE</span>
-        <h1>{p.name}</h1>
-        <p className="sub">
-          {league.name}
-          {p.position ? ` · ${p.position}` : ""}
-          {p.team ? ` · Team ${p.team}` : ""}
-        </p>
+      <div className="card card-pad" style={{ marginTop: 12 }}>
+        <PlayerCard data={data} leagueId={league.id} />
       </div>
-
-      <div className="grid grid-3">
-        <div className="card card-pad tile">
-          <div className="label">Marktwert (aktuell)</div>
-          <div className="value sm">{eur(p.latestMv)}</div>
-          <div className="hint">{eurFull(p.latestMv)}</div>
-        </div>
-        <div className="card card-pad tile">
-          <div className="label">14-Tage-Trend</div>
-          <div className={`value sm ${trend14 == null ? "" : trend14 >= 0 ? "up" : "down"}`}>
-            {trendTxt}
-          </div>
-          <div className="hint">Marktwert-Entwicklung</div>
-        </div>
-        <div className="card card-pad tile">
-          <div className="label">Ligaweite Transfers</div>
-          <div className="value sm">{p.transfers.length}</div>
-          <div className="hint">Käufe &amp; Verkäufe in dieser Liga</div>
-        </div>
-        <div className="card card-pad tile">
-          <div className="label">Im Kader von</div>
-          <div className="value sm">
-            {holder ? (
-              <Link href={leagueHref(`/manager/${holder.managerId}`, league.id)} className="linklike">
-                {holder.managerName}
-              </Link>
-            ) : (
-              "—"
-            )}
-          </div>
-          <div className="hint">
-            {holder
-              ? `${holder.points ?? 0} Punkte im Kader`
-              : "aktuell in keinem erfassten Kader (Markt/frei)"}
-          </div>
-        </div>
-      </div>
-
-      <section className="panel">
-        <div className="panel-head">
-          <h3>Marktwertverlauf (365 Tage)</h3>
-          {hasCurve && (
-            <span className="count">
-              Tief {eur(curve!.low)} · Hoch {eur(curve!.high)}
-            </span>
-          )}
-        </div>
-        <div className="card-pad">
-          {hasCurve ? (
-            <LineChart points={curve!.points} />
-          ) : p.mvHistory.length > 1 ? (
-            <>
-              {p.mvHistory.map((h) => (
-                <div className="bar-row" key={h.day}>
-                  <div className="name">Spieltag {h.day}</div>
-                  <div className="bar-track">
-                    <div
-                      className="bar-fill"
-                      style={{ width: `${((h.marketValue ?? 0) / maxMv) * 100}%` }}
-                    />
-                  </div>
-                  <div className="amt">{eur(h.marketValue)}</div>
-                </div>
-              ))}
-            </>
-          ) : (
-            <p className="note">
-              Die Marktwert-Kurve wird noch aufgebaut — sobald genügend Datenpunkte
-              vorliegen, erscheint hier der Verlauf.
-            </p>
-          )}
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <h3>Ligaweite Besitzhistorie</h3>
-          <span className="count">{p.transfers.length}</span>
-        </div>
-        {p.transfers.length === 0 ? (
-          <div className="card-pad">
-            <p className="note">
-              Noch keine Transfers dieses Spielers in {league.name} erfasst.
-            </p>
-          </div>
-        ) : (
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th className="l">Datum</th>
-                  <th className="l">Manager</th>
-                  <th className="l">Richtung</th>
-                  <th>Preis</th>
-                </tr>
-              </thead>
-              <tbody>
-                {p.transfers.map((t, i) => (
-                  <tr key={`${t.managerId}-${t.ts}-${i}`}>
-                    <td className="l muted">{date(t.ts)}</td>
-                    <td className="l">
-                      {t.managerId ? (
-                        <Link href={leagueHref(`/manager/${t.managerId}`, league.id)}>
-                          {t.managerName}
-                        </Link>
-                      ) : (
-                        t.managerName
-                      )}
-                    </td>
-                    <td className="l">
-                      {t.direction === "buy" ? (
-                        <span className="badge">Kauf</span>
-                      ) : (
-                        <span className="badge accent">Verkauf</span>
-                      )}
-                    </td>
-                    <td>{eurFull(t.price)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
     </main>
   );
 }

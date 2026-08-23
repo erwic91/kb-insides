@@ -38,7 +38,13 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default async function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({
+  children,
+  modal,
+}: {
+  children: ReactNode;
+  modal: ReactNode;
+}) {
   const [leagues, currentUser] = await Promise.all([getLeagues(), getCurrentUser()]);
   const isAdmin = isAdminEmail(currentUser?.email);
   // Dieselbe Default-Auflösung wie resolveLeague (isDefault, sonst erste), damit
@@ -55,6 +61,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           />
         </Suspense>
         {children}
+        {modal}
       </body>
     </html>
   );

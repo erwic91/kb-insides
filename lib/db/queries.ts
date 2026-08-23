@@ -1489,6 +1489,202 @@ export async function getPlayerMarketValueCurve(
   }
 }
 
+// ---------- Spielerkarte (Modal / Detailseite) ----------
+
+export interface PlayerCardTransfer {
+  managerId: string;
+  managerName: string;
+  direction: Direction;
+  price: number;
+  ts: string | null;
+}
+
+export interface PlayerCard {
+  id: string;
+  name: string;
+  position: string | null;
+  team: string | null;
+  /** Kickbase-Status (0 = fit, >0 = Ausfall) — nur wenn der Spieler im Kader ist. */
+  status: number | null;
+  statusLabel: string;
+  latestMv: number | null;
+  high: number | null;
+  low: number | null;
+  /** Tages-Marktwertkurve (365 T, aufsteigend) für den Chart mit Zeitfenstern. */
+  curve: { date: string; mv: number }[];
+  /** Absolute €-Veränderung 24 h / 7 Tage; Prozent über 14 Tage. */
+  trend24h: number | null;
+  trend7d: number | null;
+  trend14dPct: number | null;
+  /** Jüngste tägliche MV-Änderungen (neu → alt) für „Letzte Änderungen". */
+  dailyChanges: { date: string; delta: number }[];
+  points: number | null;
+  avgPoints: number | null;
+  /** Punkte je Mio € Marktwert (Effizienz). */
+  pointsPerMillion: number | null;
+  /** Eigene Fair-Value-Schätzung (Ø Punkte × Liga-Median MV/Punkt). null = keine Basis. */
+  fairValue: number | null;
+  /** Fair Value − aktueller Marktwert (+ = unterbewertet). */
+  fairValueDelta: number | null;
+  holder: { managerId: string; managerName: string; points: number | null } | null;
+  buyPrice: number | null;
+  profit: number | null;
+  transfers: PlayerCardTransfer[];
+  transferCount: number;
+  /** Externe Ausfall-Meldung (api-football), falls vorhanden. */
+  injury: { type: string | null; reason: string | null; fixtureDate: string | null } | null;
+}
+
+/**
+ * Vollständige Datenbasis für die Spielerkarte (Modal & Detailseite). Bündelt
+ * Stammdaten, Live-Marktwertkurve (Kickbase), Trends & tägliche Änderungen,
+ * Punkte/Effizienz, eine transparente Fair-Value-Schätzung, Besitzer/Transfers
+ * und eine etwaige externe Ausfall-Meldung. Alles aus vorhandenen Quellen —
+ * keine zusätzlichen Kickbase-Endpunkte nötig.
+ */
+export async function getPlayerCard(
+  league: LeagueLite,
+  playerId: string,
+): Promise<PlayerCard | null> {
+  const supabase = await getReadClient();
+  if (!supabase) return null;
+
+  const [detail, curve] = await Promise.all([
+    getPlayerDetail(league, playerId),
+    getPlayerMarketValueCurve(league, playerId),
+  ]);
+
+  // Kaderzeile dieses Spielers (Besitzer, Status, Ø Punkte).
+  const { data: sp } = await supabase
+    .from("squad_players")
+    .select("manager_id, points, avg_points, market_value, status")
+    .eq("league_id", league.id)
+    .eq("player_id", playerId)
+    .maybeSingle();
+
+  if (!detail && !sp && (curve == null || curve.points.length === 0)) return null;
+
+  const name = detail?.name ?? `#${playerId}`;
+  const position = detail?.position ?? null;
+  const team = detail?.team ?? null;
+
+  const pts = curve?.points ?? [];
+  const latestMv =
+    pts.length > 0 ? pts[pts.length - 1]!.mv : (sp?.market_value as number) ?? detail?.latestMv ?? null;
+
+  // Trends aus der Tageskurve (aufsteigend). 24 h = letzter vs. vorletzter Punkt.
+  const valAtDaysAgo = (days: number): number | null => {
+    if (pts.length === 0) return null;
+    const target = Date.parse(pts[pts.length - 1]!.date) - days * 86_400_000;
+    let base = pts[0]!;
+    for (const p of pts) {
+      if (Date.parse(p.date) <= target) base = p;
+      else break;
+    }
+    return base.mv;
+  };
+  const trend24h = pts.length >= 2 ? pts[pts.length - 1]!.mv - pts[pts.length - 2]!.mv : null;
+  const v7 = valAtDaysAgo(7);
+  const trend7d = v7 != null && pts.length > 0 ? pts[pts.length - 1]!.mv - v7 : null;
+  const v14 = valAtDaysAgo(14);
+  const trend14dPct =
+    v14 != null && v14 > 0 && pts.length > 0 ? (pts[pts.length - 1]!.mv - v14) / v14 : null;
+
+  // Jüngste tägliche Änderungen (neu → alt), max. 8.
+  const dailyChanges: { date: string; delta: number }[] = [];
+  for (let i = pts.length - 1; i > 0 && dailyChanges.length < 8; i--) {
+    dailyChanges.push({ date: pts[i]!.date, delta: pts[i]!.mv - pts[i - 1]!.mv });
+  }
+
+  const avgPoints = (sp?.avg_points as number) ?? null;
+  const points = (sp?.points as number) ?? null;
+  const status = (sp?.status as number) ?? null;
+  const pointsPerMillion =
+    points != null && latestMv != null && latestMv > 0 ? points / (latestMv / 1_000_000) : null;
+
+  // Fair Value: Liga-Median von MV/Ø-Punkt (nur belastbare Werte), × Ø Punkte.
+  let fairValue: number | null = null;
+  const { data: pool } = await supabase
+    .from("squad_players")
+    .select("market_value, avg_points")
+    .eq("league_id", league.id);
+  const ratios = (pool ?? [])
+    .filter((r) => ((r.avg_points as number) ?? 0) >= 3 && ((r.market_value as number) ?? 0) > 0)
+    .map((r) => (r.market_value as number) / (r.avg_points as number))
+    .sort((a, b) => a - b);
+  const k = ratios.length > 0 ? ratios[Math.floor(ratios.length / 2)]! : null;
+  if (k != null && avgPoints != null && avgPoints > 0) fairValue = Math.round(avgPoints * k);
+  const fairValueDelta = fairValue != null && latestMv != null ? fairValue - latestMv : null;
+
+  // Besitzer + letzter Kaufpreis/Gewinn (aus der Transferhistorie).
+  let holder: PlayerCard["holder"] = null;
+  if (sp?.manager_id) {
+    const { data: m } = await supabase
+      .from("managers")
+      .select("name")
+      .eq("league_id", league.id)
+      .eq("id", sp.manager_id as string)
+      .maybeSingle();
+    holder = {
+      managerId: sp.manager_id as string,
+      managerName: (m?.name as string) ?? (sp.manager_id as string),
+      points,
+    };
+  }
+  let buyPrice: number | null = null;
+  if (holder) {
+    const buys = (detail?.transfers ?? [])
+      .filter((t) => t.direction === "buy" && t.managerId === holder!.managerId)
+      .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
+    buyPrice = buys[0]?.price ?? null;
+  }
+  const profit = buyPrice != null && latestMv != null ? latestMv - buyPrice : null;
+
+  // Externe Ausfall-Meldung (api-football), falls verlinkt.
+  const { data: inj } = await supabase
+    .from("external_injuries")
+    .select("type, reason, fixture_date")
+    .eq("kb_player_id", playerId)
+    .order("fixture_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const injury = inj
+    ? {
+        type: (inj.type as string) ?? null,
+        reason: (inj.reason as string) ?? null,
+        fixtureDate: (inj.fixture_date as string) ?? null,
+      }
+    : null;
+
+  return {
+    id: playerId,
+    name,
+    position,
+    team,
+    status,
+    statusLabel: statusLabel(status),
+    latestMv,
+    high: curve?.high ?? null,
+    low: curve?.low ?? null,
+    curve: pts,
+    trend24h,
+    trend7d,
+    trend14dPct,
+    dailyChanges,
+    points,
+    avgPoints,
+    pointsPerMillion,
+    fairValue,
+    fairValueDelta,
+    holder,
+    buyPrice,
+    profit,
+    transfers: detail?.transfers ?? [],
+    transferCount: detail?.transfers.length ?? 0,
+    injury,
+  };
+}
+
 // ---------- §8: Kalibrierung ----------
 
 export interface CalibrationRow {
