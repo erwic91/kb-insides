@@ -32,8 +32,6 @@ export default async function LigaPage({
     getTopPlayers(league, 50),
   ]);
   const active = rows.filter((r) => r.active);
-  const byTv = [...active].sort((a, b) => (b.teamValue ?? 0) - (a.teamValue ?? 0));
-  const maxTv = byTv[0]?.teamValue ?? 0;
   const href = (base: string) => `${base}?league=${encodeURIComponent(league.id)}`;
 
   return (
@@ -49,27 +47,6 @@ export default async function LigaPage({
           </p>
         </div>
       </div>
-
-      <section className="card card-pad">
-        <p className="card-title">Marktband — Kaderwert</p>
-        {byTv.map((r) => (
-          <div className="bar-row" key={r.id}>
-            <div className="name">
-              <Link href={leagueHref(`/manager/${r.id}`, league.id)}>{r.name}</Link>
-            </div>
-            <div className="bar-track">
-              <div
-                className="bar-fill"
-                style={{ width: maxTv > 0 ? `${((r.teamValue ?? 0) / maxTv) * 100}%` : "0%" }}
-              />
-            </div>
-            <div className="amt" title={eurFull(r.teamValue)}>
-              {eur(r.teamValue)}
-            </div>
-          </div>
-        ))}
-        {byTv.length === 0 && <p className="muted">Keine aktiven Manager.</p>}
-      </section>
 
       <section className="section">
         <div className="section-head">
