@@ -38,6 +38,12 @@ export interface ManagerTableRow {
   teamValue: number | null;
   /** Kaderwert-Veränderung zum Vortag in % (0.05 = +5 %); null wenn unbekannt. */
   teamValueDeltaPct: number | null;
+  /**
+   * Kader-Momentum: Summe der heutigen Marktwert-Änderungen aller Kaderspieler
+   * (jeder Spieler wird ~22 Uhr aktualisiert). Zeigt, wie viel Marktwert der
+   * Kader gerade gewinnt/verliert. null, solange < 2 MV-Snapshots vorliegen.
+   */
+  squadMvGrowth: number | null;
   /** Kaderwert am Vortag (letzter Snapshot vor heute) — für sortier-reaktive Rang-Pfeile. */
   prevTeamValue: number | null;
   /** Rekonstruiertes Konto am Vortag — für sortier-reaktive Rang-Pfeile. */
@@ -199,6 +205,71 @@ async function getPrevManagerMetrics(leagueId: string): Promise<Map<string, Prev
       cash: (r.cash as number) ?? null,
       points: (r.points as number) ?? null,
     });
+  }
+  return out;
+}
+
+/**
+ * Kader-Momentum je Manager: Summe der heutigen Marktwert-Änderungen aller
+ * seiner Kaderspieler (jüngster player_mv_daily-Snapshot minus Vortags-Snapshot).
+ * Jeder Spieler wird täglich ~22 Uhr aktualisiert; die Summe zeigt, wie viel
+ * Marktwert der Kader gerade gewinnt/verliert. Leer, solange < 2 Snapshot-Tage
+ * vorliegen.
+ */
+async function getSquadMvGrowth(leagueId: string): Promise<Map<string, number>> {
+  const supabase = await getReadClient();
+  const out = new Map<string, number>();
+  if (!supabase) return out;
+
+  // Die zwei jüngsten Snapshot-Tage bestimmen (alle Spieler teilen sich die
+  // nächtlichen snap_dates, daher genügen zwei gezielte Abfragen).
+  const { data: latestRow } = await supabase
+    .from("player_mv_daily")
+    .select("snap_date")
+    .eq("league_id", leagueId)
+    .order("snap_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const latest = latestRow?.snap_date as string | undefined;
+  if (!latest) return out;
+  const { data: prevRow } = await supabase
+    .from("player_mv_daily")
+    .select("snap_date")
+    .eq("league_id", leagueId)
+    .lt("snap_date", latest)
+    .order("snap_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const prev = prevRow?.snap_date as string | undefined;
+  if (!prev) return out; // braucht zwei Tage
+
+  const { data: mvRows } = await supabase
+    .from("player_mv_daily")
+    .select("player_id, market_value, snap_date")
+    .eq("league_id", leagueId)
+    .in("snap_date", [latest, prev]);
+  const cur = new Map<string, number>();
+  const old = new Map<string, number>();
+  for (const r of mvRows ?? []) {
+    const pid = r.player_id as string;
+    const mv = r.market_value as number | null;
+    if (mv == null) continue;
+    if (r.snap_date === latest) cur.set(pid, mv);
+    else old.set(pid, mv);
+  }
+
+  // Spieler → Manager zuordnen und die Deltas je Manager aufsummieren.
+  const { data: sq } = await supabase
+    .from("squad_players")
+    .select("manager_id, player_id")
+    .eq("league_id", leagueId);
+  for (const s of sq ?? []) {
+    const pid = s.player_id as string;
+    const c = cur.get(pid);
+    const o = old.get(pid);
+    if (c == null || o == null) continue;
+    const mid = s.manager_id as string;
+    out.set(mid, (out.get(mid) ?? 0) + (c - o));
   }
   return out;
 }
@@ -366,7 +437,7 @@ export async function getManagerTable(
   const transfers = await getTransfersByManager(league.id);
   // „Ich" + exakter Kontostand kommen jetzt pro Nutzer aus league_access /
   // user_budget (nicht mehr aus managers.is_me / snapshots.cash_actual).
-  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds, bonusPoints, prevMetrics] =
+  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds, bonusPoints, prevMetrics, mvGrowth] =
     await Promise.all([
       getMyAccess(),
       getMyBudget(league.id),
@@ -375,6 +446,7 @@ export async function getManagerTable(
       getHiddenManagerIds(league.id),
       getMatchdayBonusPoints(league.id),
       getPrevManagerMetrics(league.id),
+      getSquadMvGrowth(league.id),
     ]);
   // Spieltagsbonus (Punkte × 1000 €) nur im Manager-Modus (gameMode 2).
   const bonusFor = (mid: string) =>
@@ -439,6 +511,7 @@ export async function getManagerTable(
       isMe,
       teamValue,
       teamValueDeltaPct: tvDeltas.get(mid) ?? null,
+      squadMvGrowth: mvGrowth.get(mid) ?? null,
       prevTeamValue: prev?.teamValue ?? null,
       prevCash: prev?.cash ?? null,
       prevPoints: prev?.points ?? null,

@@ -130,7 +130,7 @@ export default async function DashboardPage({
         <div className="section-head">
           <h2>
             Alle Manager
-            <InfoDot text="Alle Manager der Liga. Kaderwert, Punkte, Spieler & Aktivität kommen direkt aus Kickbase. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Das ▲/▼ am Namen zeigt, wie viele Plätze der Manager in der aktuell sortierten Spalte seit gestern gut- oder schlechtgemacht hat (z. B. beim Gesamtwert). Spaltenköpfe haben eigene Erklärungen." />
+            <InfoDot text="Alle Manager der Liga. Kaderwert & Punkte kommen direkt aus Kickbase. Kader-Momentum = Summe der heutigen Marktwert-Änderungen aller Kaderspieler. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Aktivität & Login-Bonus lassen sich über das Zahnrad rechts einblenden. Das ▲/▼ am Namen zeigt, wie viele Plätze der Manager in der aktuell sortierten Spalte seit gestern gut- oder schlechtgemacht hat (z. B. beim Gesamtwert). Spaltenköpfe haben eigene Erklärungen." />
           </h2>
           <span className="note">Spaltenkopf klicken zum Sortieren</span>
         </div>

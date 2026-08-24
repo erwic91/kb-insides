@@ -1,14 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import type { ManagerTableRow } from "../lib/db/queries";
 import { maxBid } from "../lib/compute/reconstruct";
-import { eur, eurFull, num, pct } from "../lib/format";
+import { eur, eurFull, eurSigned, num, pct } from "../lib/format";
 import InfoDot from "./InfoDot";
 
 type Key =
   | "teamValue"
+  | "squadMvGrowth"
   | "points"
   | "squadSize"
   | "lastActiveDays"
@@ -19,7 +20,10 @@ type Key =
   | "total";
 
 /** Euro-Spalten: hier zeigt der Hover den exakten Wert bis auf den Euro. */
-const EURO_KEYS = new Set<Key>(["teamValue", "cash", "loginBonus", "maxBid", "total"]);
+const EURO_KEYS = new Set<Key>(["teamValue", "squadMvGrowth", "cash", "loginBonus", "maxBid", "total"]);
+
+/** Standardmäßig ausgeblendete Spalten — über das Zahnrad einblendbar. */
+const OPTIONAL_KEYS = new Set<Key>(["lastActiveDays", "loginBonus"]);
 
 /** Spalten, für die ein Platzierungs-Pfeil (Rang vs. Vortag) sinnvoll ist. */
 const RANK_KEYS = new Set<Key>(["teamValue", "points", "cash", "maxBid", "total", "liquidity"]);
@@ -95,6 +99,12 @@ interface Col {
 
 const COLS: Col[] = [
   { key: "teamValue", label: "Kaderwert", render: (r) => eur(r.teamValue) },
+  {
+    key: "squadMvGrowth",
+    label: "Kader-Momentum",
+    info: "Summe der heutigen Marktwert-Änderungen aller Kaderspieler (jeder Spieler wird ~22 Uhr aktualisiert). Zeigt, wie viel Marktwert der Kader gerade gewinnt oder verliert — ein Maß dafür, wie attraktiv die Spieler dieses Managers aktuell sind.",
+    render: (r) => (r.squadMvGrowth != null ? eurSigned(r.squadMvGrowth) : "—"),
+  },
   { key: "points", label: "Punkte", render: (r) => num(r.points) },
   { key: "squadSize", label: "Spieler", render: (r) => (r.squadSize != null ? String(r.squadSize) : "—") },
   {
@@ -164,14 +174,35 @@ export default function ManagerTable({
   showMoney: boolean;
   leagueId: string;
 }) {
-  // Spalte nur zeigen, wenn (a) im Modus valide und (b) mind. ein Wert vorhanden.
+  // Optionale Spalten (Aktivität, Login-Bonus) sind per Default aus und werden
+  // über das Zahnrad einzeln eingeblendet.
+  const [optional, setOptional] = useState<Record<string, boolean>>({});
+  const [gearOpen, setGearOpen] = useState(false);
+  const gearRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!gearOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (gearRef.current && !gearRef.current.contains(e.target as Node)) setGearOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [gearOpen]);
+
+  // Spalte nur zeigen, wenn (a) im Modus valide, (b) nicht als optional
+  // ausgeblendet und (c) mind. ein Wert vorhanden.
   const cols = COLS.filter((c) => {
     if (c.money && !showMoney) return false;
+    if (OPTIONAL_KEYS.has(c.key) && !optional[c.key]) return false;
     return rows.some((r) => {
       const v = r[c.key];
       return v != null;
     });
   });
+
+  // Optionale Spalten, die überhaupt Daten haben — nur die im Zahnrad anbieten.
+  const optionalCols = COLS.filter(
+    (c) => OPTIONAL_KEYS.has(c.key) && (!c.money || showMoney) && rows.some((r) => r[c.key] != null),
+  );
 
   const defaultKey: Key = showMoney ? "total" : "points";
   const [sort, setSort] = useState<{ key: Key; dir: 1 | -1 }>({ key: defaultKey, dir: -1 });
@@ -220,7 +251,40 @@ export default function ManagerTable({
   const leagueHref = (base: string) => `${base}?league=${encodeURIComponent(leagueId)}`;
 
   return (
-    <div className="table-wrap">
+    <div className="mgr-table">
+      {optionalCols.length > 0 && (
+        <div className="tbl-toolbar">
+          <div className="gear-wrap" ref={gearRef}>
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label="Spalten ein-/ausblenden"
+              title="Spalten ein-/ausblenden"
+              onClick={() => setGearOpen((o) => !o)}
+            >
+              ⚙
+            </button>
+            {gearOpen && (
+              <div className="gear-menu">
+                <div className="gear-menu-head">Weitere Spalten</div>
+                {optionalCols.map((c) => (
+                  <label key={c.key} className="gear-opt">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(optional[c.key])}
+                      onChange={(e) =>
+                        setOptional((o) => ({ ...o, [c.key]: e.target.checked }))
+                      }
+                    />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="table-wrap">
       <table className="tbl click">
         <thead>
           <tr>
@@ -280,11 +344,20 @@ export default function ManagerTable({
                 // Negativer Kontostand / negative Liquidität = im Minus → rot.
                 const negative =
                   (c.key === "cash" || c.key === "liquidity") && typeof raw === "number" && raw < 0;
+                // Kader-Momentum vorzeichenfarbig (grün steigend, rot fallend).
+                const signed =
+                  c.key === "squadMvGrowth" && typeof raw === "number" && raw !== 0
+                    ? raw > 0
+                      ? "var(--gain)"
+                      : "var(--loss)"
+                    : null;
                 const style = c.highlight
                   ? { fontWeight: 600, color: "var(--signal)" }
                   : negative
                     ? { fontWeight: 600, color: "var(--loss)" }
-                    : undefined;
+                    : signed
+                      ? { fontWeight: 600, color: signed }
+                      : undefined;
                 return (
                   <td key={c.key} className="num" title={exact} style={style}>
                     {c.render(r)}
@@ -314,6 +387,7 @@ export default function ManagerTable({
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
