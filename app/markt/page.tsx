@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { resolveLeague, getBidAdvisor, getPanicBarometer, getMarketPotential } from "../../lib/db/queries";
+import {
+  resolveLeague,
+  getBidAdvisor,
+  getPanicBarometers,
+  getMarketPotential,
+  PANIC_WINDOWS,
+} from "../../lib/db/queries";
 import { computeAutoTargets } from "../../lib/compute/autotargets";
 import { eur } from "../../lib/format";
 import MarketRadar from "../../components/MarketRadar";
@@ -36,7 +42,7 @@ export default async function MarktPage({
 
   const { listings, advice } = await getBidAdvisor(league);
   const [panic, potential] = await Promise.all([
-    getPanicBarometer(league),
+    getPanicBarometers(league),
     getMarketPotential(league),
   ]);
   const showBids = league.startBudget > 0;
@@ -71,7 +77,7 @@ export default async function MarktPage({
       </div>
 
       <div className="g-2" style={{ marginBottom: 16 }}>
-        <PanicBarometer data={panic} leagueId={league.id} />
+        <PanicBarometer set={panic} windows={PANIC_WINDOWS} leagueId={league.id} />
         {potential && <MarketPotential data={potential} showMoney={showBids} />}
       </div>
 

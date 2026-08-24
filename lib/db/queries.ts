@@ -1218,8 +1218,8 @@ export async function getOverpay(league: LeagueLite, managerId: string): Promise
 
 // ---------- Panik-Barometer (Overpay-Stimmung der Liga) ----------
 
-/** Zeitfenster für das Barometer (Tage) und der Overpay-Anteil für „volle Panik". */
-const PANIC_WINDOW_DAYS = 14;
+/** Wählbare Zeitfenster (Tage) und der Overpay-Anteil für „volle Panik". */
+export const PANIC_WINDOWS = [1, 3, 7];
 const PANIC_FULL_RATIO = 0.4; // 40 % über Marktwert im Schnitt = rot
 
 export interface PanicBuy {
@@ -1248,25 +1248,64 @@ export interface PanicBarometer {
   topBuys: PanicBuy[];
 }
 
-/**
- * Panik-Barometer: misst die durchschnittlichen Transfer-Overpays der Liga im
- * jüngsten Zeitfenster. Wertgewichtet (Σ Overpay ÷ Σ Marktwert), damit teure
- * Käufe nicht durch prozentuale Ausreißer bei billigen Spielern verzerrt werden.
- * Viel Overpay = überhitzte/panische Liga (rot), wenig/negativ = ruhig (grün).
- */
-export async function getPanicBarometer(league: LeagueLite): Promise<PanicBarometer> {
-  const empty: PanicBarometer = {
-    ratio: null,
-    score: 0,
-    count: 0,
-    windowDays: PANIC_WINDOW_DAYS,
-    avgOverpay: null,
-    topBuys: [],
-  };
-  const supabase = await getReadClient();
-  if (!supabase) return empty;
+function emptyPanic(windowDays: number): PanicBarometer {
+  return { ratio: null, score: 0, count: 0, windowDays, avgOverpay: null, topBuys: [] };
+}
 
-  const sinceIso = new Date(Date.now() - PANIC_WINDOW_DAYS * 86_400_000).toISOString();
+/** Reine Berechnung des Barometers aus einer Kauf-Zeilenmenge (mv > 0). */
+function computePanic(
+  rows: { playerId: string; managerId: string; price: number; mv: number; ts: string | null }[],
+  windowDays: number,
+  pmap: Map<string, string>,
+  nmap: Map<string, string>,
+): PanicBarometer {
+  if (rows.length === 0) return emptyPanic(windowDays);
+  let sumOverpay = 0;
+  let sumMv = 0;
+  for (const r of rows) {
+    sumOverpay += r.price - r.mv;
+    sumMv += r.mv;
+  }
+  const ratio = sumMv > 0 ? sumOverpay / sumMv : null;
+  const score = ratio == null ? 0 : Math.max(0, Math.min(1, ratio / PANIC_FULL_RATIO));
+  const avgOverpay = Math.round(sumOverpay / rows.length);
+  const topBuys: PanicBuy[] = rows
+    .map((r) => ({
+      playerId: r.playerId,
+      playerName: pmap.get(r.playerId) ?? `#${r.playerId}`,
+      managerId: r.managerId,
+      managerName: nmap.get(r.managerId) ?? r.managerId,
+      price: r.price,
+      mv: r.mv,
+      overpay: r.price - r.mv,
+      overpayPct: (r.price - r.mv) / r.mv,
+      ts: r.ts,
+    }))
+    .filter((b) => b.overpay > 0)
+    .sort((a, b) => b.overpayPct - a.overpayPct)
+    .slice(0, 5);
+  return { ratio, score, count: rows.length, windowDays, avgOverpay, topBuys };
+}
+
+/**
+ * Panik-Barometer für mehrere Zeitfenster (1/3/7 Tage) in EINER Abfrage: misst
+ * die wertgewichteten Transfer-Overpays der Liga (Σ Overpay ÷ Σ Marktwert),
+ * damit teure Käufe nicht durch prozentuale Ausreißer bei billigen Spielern
+ * verzerrt werden. Viel Overpay = überhitzt/panisch (rot), wenig/negativ = ruhig
+ * (grün). Die Käufe des größten Fensters werden einmal geladen und je Fenster
+ * clientseitig gefiltert — der Nutzer schaltet ohne Server-Roundtrip um.
+ */
+export async function getPanicBarometers(
+  league: LeagueLite,
+  windows: number[] = PANIC_WINDOWS,
+): Promise<Record<number, PanicBarometer>> {
+  const out: Record<number, PanicBarometer> = {};
+  for (const w of windows) out[w] = emptyPanic(w);
+  const supabase = await getReadClient();
+  if (!supabase) return out;
+
+  const maxW = Math.max(...windows, 1);
+  const sinceIso = new Date(Date.now() - maxW * 86_400_000).toISOString();
   const { data } = await supabase
     .from("transfers")
     .select("player_id, to_manager, price, mv_at_time, ts")
@@ -1275,23 +1314,20 @@ export async function getPanicBarometer(league: LeagueLite): Promise<PanicBarome
     .not("mv_at_time", "is", null)
     .gte("ts", sinceIso)
     .order("ts", { ascending: false });
-  const rows = (data ?? []).filter((r) => ((r.mv_at_time as number) ?? 0) > 0);
-  if (rows.length === 0) return empty;
+  const all = (data ?? [])
+    .filter((r) => ((r.mv_at_time as number) ?? 0) > 0)
+    .map((r) => ({
+      playerId: r.player_id as string,
+      managerId: r.to_manager as string,
+      price: (r.price as number) ?? 0,
+      mv: r.mv_at_time as number,
+      ts: (r.ts as string) ?? null,
+    }));
+  if (all.length === 0) return out;
 
-  let sumOverpay = 0;
-  let sumMv = 0;
-  for (const r of rows) {
-    const mv = r.mv_at_time as number;
-    sumOverpay += ((r.price as number) ?? 0) - mv;
-    sumMv += mv;
-  }
-  const ratio = sumMv > 0 ? sumOverpay / sumMv : null;
-  const score = ratio == null ? 0 : Math.max(0, Math.min(1, ratio / PANIC_FULL_RATIO));
-  const avgOverpay = Math.round(sumOverpay / rows.length);
-
-  // Namen für die Top-Panikkäufe.
-  const pids = [...new Set(rows.map((r) => r.player_id as string))];
-  const mids = [...new Set(rows.map((r) => r.to_manager as string))];
+  // Namen einmalig für alle Käufe im größten Fenster auflösen.
+  const pids = [...new Set(all.map((r) => r.playerId))];
+  const mids = [...new Set(all.map((r) => r.managerId))];
   const pmap = new Map<string, string>();
   if (pids.length > 0) {
     const { data: pd } = await supabase.from("players").select("id, name").in("id", pids);
@@ -1307,29 +1343,13 @@ export async function getPanicBarometer(league: LeagueLite): Promise<PanicBarome
     for (const m of md ?? []) nmap.set(m.id as string, m.name as string);
   }
 
-  const topBuys: PanicBuy[] = rows
-    .map((r) => {
-      const mv = r.mv_at_time as number;
-      const price = (r.price as number) ?? 0;
-      const pid = r.player_id as string;
-      const mid = r.to_manager as string;
-      return {
-        playerId: pid,
-        playerName: pmap.get(pid) ?? `#${pid}`,
-        managerId: mid,
-        managerName: nmap.get(mid) ?? mid,
-        price,
-        mv,
-        overpay: price - mv,
-        overpayPct: (price - mv) / mv,
-        ts: (r.ts as string) ?? null,
-      };
-    })
-    .filter((b) => b.overpay > 0)
-    .sort((a, b) => b.overpayPct - a.overpayPct)
-    .slice(0, 5);
-
-  return { ratio, score, count: rows.length, windowDays: PANIC_WINDOW_DAYS, avgOverpay, topBuys };
+  const now = Date.now();
+  for (const w of windows) {
+    const cut = now - w * 86_400_000;
+    const rws = all.filter((r) => r.ts != null && Date.parse(r.ts) >= cut);
+    out[w] = computePanic(rws, w, pmap, nmap);
+  }
+  return out;
 }
 
 // ---------- Markt-Potenzial (freier Marktwert vs. Kaufkraft) ----------

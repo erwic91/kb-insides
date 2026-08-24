@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import type { PanicBarometer as PanicData } from "../lib/db/queries";
 import { eurFull } from "../lib/format";
@@ -15,9 +18,21 @@ const fmtPct1 = (x: number) =>
 
 /**
  * Panik-Barometer: Tacho für die Overpay-Stimmung der Liga. Grün = ruhig,
- * Rot = überhitzt/panisch. Server-Komponente.
+ * Rot = überhitzt/panisch. Über 1/3/7-Tage-Fenster umschaltbar (Daten für alle
+ * Fenster kommen vorberechnet vom Server, Umschalten ohne Roundtrip).
  */
-export default function PanicBarometer({ data, leagueId }: { data: PanicData; leagueId: string }) {
+export default function PanicBarometer({
+  set,
+  windows,
+  leagueId,
+}: {
+  set: Record<number, PanicData>;
+  windows: number[];
+  leagueId: string;
+}) {
+  const [win, setWin] = useState<number>(windows[windows.length - 1] ?? 7);
+  const data = set[win] ?? { ratio: null, score: 0, count: 0, windowDays: win, avgOverpay: null, topBuys: [] };
+
   const href = (b: string) => `${b}?league=${encodeURIComponent(leagueId)}`;
   const enough = data.count >= 3 && data.ratio != null;
   const m = mood(data.score);
@@ -27,15 +42,27 @@ export default function PanicBarometer({ data, leagueId }: { data: PanicData; le
     <div className="panel">
       <div className="panel-head">
         <h3>Panik-Barometer</h3>
-        <span className="count">
-          letzte {data.windowDays} Tage · {data.count} Käufe
-        </span>
+        <div className="mv-frames" style={{ margin: 0 }}>
+          {windows.map((w) => (
+            <button
+              key={w}
+              type="button"
+              className={`mv-frame ${w === win ? "on" : ""}`}
+              onClick={() => setWin(w)}
+            >
+              {w} T
+            </button>
+          ))}
+        </div>
       </div>
       <div style={{ padding: "16px 18px" }}>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          letzte {data.windowDays} {data.windowDays === 1 ? "Tag" : "Tage"} · {data.count} Käufe
+        </div>
         {!enough ? (
           <div className="notice">
-            Noch zu wenig Transferdaten mit Marktwert-Basis. Das Barometer greift, sobald mehr
-            Käufe erfasst sind (vor allem ab Saisonstart, wenn wieder viel transferiert wird).
+            Noch zu wenig Transferdaten mit Marktwert-Basis in diesem Fenster. Wähle ein größeres
+            Zeitfenster oder warte, bis mehr Käufe erfasst sind (vor allem ab Saisonstart).
           </div>
         ) : (
           <>
