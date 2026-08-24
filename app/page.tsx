@@ -127,14 +127,14 @@ export default async function DashboardPage({
       </div>
 
       <div className="section">
-        <div className="section-head">
-          <h2>
-            Alle Manager
-            <InfoDot text="Alle Manager der Liga. Kaderwert & Punkte kommen direkt aus Kickbase. Kader-Momentum = Summe der heutigen Marktwert-Änderungen aller Kaderspieler. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Aktivität & Login-Bonus lassen sich über das Zahnrad rechts einblenden. Das ▲/▼ am Namen zeigt, wie viele Plätze der Manager in der aktuell sortierten Spalte seit gestern gut- oder schlechtgemacht hat (z. B. beim Gesamtwert). Spaltenköpfe haben eigene Erklärungen." />
-          </h2>
-          <span className="note">Spaltenkopf klicken zum Sortieren</span>
-        </div>
-        <ManagerTable rows={rows} showMoney={showMoney} leagueId={league.id} />
+        <ManagerTable
+          rows={rows}
+          showMoney={showMoney}
+          leagueId={league.id}
+          title="Alle Manager"
+          note="Spaltenkopf klicken zum Sortieren"
+          info="Alle Manager der Liga. Kaderwert & Punkte kommen direkt aus Kickbase. Kader-Momentum = Summe der heutigen Marktwert-Änderungen aller Kaderspieler. Kontostand, Login-Bonus, Maximalgebot, Liquidität & Gesamt sind bei Gegnern aus der Transferhistorie rekonstruiert (dein eigenes Konto ist exakt). Aktivität & Login-Bonus lassen sich über das Zahnrad rechts einblenden. Das ▲/▼ am Namen zeigt, wie viele Plätze der Manager in der aktuell sortierten Spalte seit gestern gut- oder schlechtgemacht hat (z. B. beim Gesamtwert). Spaltenköpfe haben eigene Erklärungen."
+        />
         {hidden.length > 0 && (
           <div className="note" style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
             <span className="muted">Ausgeblendet:</span>

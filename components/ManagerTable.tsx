@@ -169,10 +169,17 @@ export default function ManagerTable({
   rows,
   showMoney,
   leagueId,
+  title,
+  info,
+  note,
 }: {
   rows: ManagerTableRow[];
   showMoney: boolean;
   leagueId: string;
+  /** Optionale Kopfzeile (Titel + Info + Hinweis + Zahnrad auf einer Zeile). */
+  title?: string;
+  info?: string;
+  note?: string;
 }) {
   // Optionale Spalten (Aktivität, Login-Bonus) sind per Default aus und werden
   // über das Zahnrad einzeln eingeblendet.
@@ -250,37 +257,52 @@ export default function ManagerTable({
 
   const leagueHref = (base: string) => `${base}?league=${encodeURIComponent(leagueId)}`;
 
+  const gear =
+    optionalCols.length > 0 ? (
+      <div className="gear-wrap" ref={gearRef}>
+        <button
+          type="button"
+          className="icon-btn sm"
+          aria-label="Spalten ein-/ausblenden"
+          title="Spalten ein-/ausblenden"
+          aria-expanded={gearOpen}
+          onClick={() => setGearOpen((o) => !o)}
+        >
+          ⚙
+        </button>
+        {gearOpen && (
+          <div className="gear-menu">
+            <div className="gear-menu-head">Weitere Spalten</div>
+            {optionalCols.map((c) => (
+              <label key={c.key} className="gear-opt">
+                <input
+                  type="checkbox"
+                  checked={Boolean(optional[c.key])}
+                  onChange={(e) => setOptional((o) => ({ ...o, [c.key]: e.target.checked }))}
+                />
+                {c.label}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    ) : null;
+
   return (
     <div className="mgr-table">
-      {optionalCols.length > 0 && (
-        <div className="tbl-toolbar">
-          <div className="gear-wrap" ref={gearRef}>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label="Spalten ein-/ausblenden"
-              title="Spalten ein-/ausblenden"
-              onClick={() => setGearOpen((o) => !o)}
-            >
-              ⚙
-            </button>
-            {gearOpen && (
-              <div className="gear-menu">
-                <div className="gear-menu-head">Weitere Spalten</div>
-                {optionalCols.map((c) => (
-                  <label key={c.key} className="gear-opt">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(optional[c.key])}
-                      onChange={(e) =>
-                        setOptional((o) => ({ ...o, [c.key]: e.target.checked }))
-                      }
-                    />
-                    {c.label}
-                  </label>
-                ))}
-              </div>
-            )}
+      {(title || note || gear) && (
+        <div className="section-head mgr-head">
+          {title ? (
+            <h2>
+              {title}
+              {info && <InfoDot text={info} />}
+            </h2>
+          ) : (
+            <span />
+          )}
+          <div className="mgr-head-right">
+            {note && <span className="note">{note}</span>}
+            {gear}
           </div>
         </div>
       )}

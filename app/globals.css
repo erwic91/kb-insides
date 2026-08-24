@@ -1311,3 +1311,79 @@ code {
 .gear-opt input {
   accent-color: var(--signal);
 }
+
+/* Header-Zahnrad (Verbindung & Admin) im dunklen Topbar */
+.topbar-menu {
+  position: relative;
+}
+.topbar-gear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #39414d;
+  border-radius: 3px;
+  background: none;
+  color: #8c949e;
+  cursor: pointer;
+  transition: 0.14s;
+}
+.topbar-gear:hover,
+.topbar-gear.on {
+  color: var(--paper);
+  border-color: #5a6472;
+}
+.topbar-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 150px;
+  background: var(--ink);
+  border: 1px solid #39414d;
+  border-radius: 6px;
+  padding: 5px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+}
+.topbar-dropdown a {
+  font-family: var(--display);
+  font-variation-settings: "wdth" 110, "wght" 600;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8c949e;
+  padding: 8px 12px;
+  border-radius: 3px;
+  transition: 0.14s;
+}
+.topbar-dropdown a:hover,
+.topbar-dropdown a.on {
+  color: var(--paper);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* Kompakte Kopfzeile der Managerliste (Titel + Hinweis + Zahnrad auf einer Zeile) */
+.mgr-head {
+  margin-bottom: 10px;
+}
+.mgr-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.icon-btn.sm {
+  width: 28px;
+  height: 28px;
+  border-color: var(--line);
+  color: var(--mute);
+  font-size: 14px;
+}
+.icon-btn.sm:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--chalk);
+  border-color: var(--ink);
+}
