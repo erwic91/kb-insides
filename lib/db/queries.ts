@@ -1221,6 +1221,9 @@ export async function getOverpay(league: LeagueLite, managerId: string): Promise
 /** Wählbare Zeitfenster (Tage) und der Overpay-Anteil für „volle Panik". */
 export const PANIC_WINDOWS = [1, 3, 7];
 const PANIC_FULL_RATIO = 0.4; // 40 % über Marktwert im Schnitt = rot
+/** Panik-Verlauf: Anzahl Tagespunkte und rollierendes Fenster je Punkt. */
+const PANIC_SERIES_DAYS = 14;
+const PANIC_SERIES_ROLL = 3;
 
 export interface PanicBuy {
   playerId: string;
@@ -1246,6 +1249,20 @@ export interface PanicBarometer {
   avgOverpay: number | null;
   /** Größte Overpay-Käufe (in %) im Fenster. */
   topBuys: PanicBuy[];
+}
+
+/** Ein Punkt der Panik-Verlaufskurve (rollierender Overpay-Anteil je Tag). */
+export interface PanicPoint {
+  date: string;
+  /** Wertgewichteter Overpay-Anteil im rollierenden Fenster; null = keine Käufe. */
+  ratio: number | null;
+}
+
+export interface PanicBarometerSet {
+  /** Barometer je wählbarem Zeitfenster (1/3/7 Tage). */
+  byWindow: Record<number, PanicBarometer>;
+  /** Panik-Verlauf: rollierender Tages-Overpay-Anteil (für die Sparkline). */
+  series: PanicPoint[];
 }
 
 function emptyPanic(windowDays: number): PanicBarometer {
@@ -1298,14 +1315,17 @@ function computePanic(
 export async function getPanicBarometers(
   league: LeagueLite,
   windows: number[] = PANIC_WINDOWS,
-): Promise<Record<number, PanicBarometer>> {
-  const out: Record<number, PanicBarometer> = {};
-  for (const w of windows) out[w] = emptyPanic(w);
+): Promise<PanicBarometerSet> {
+  const byWindow: Record<number, PanicBarometer> = {};
+  for (const w of windows) byWindow[w] = emptyPanic(w);
+  const out: PanicBarometerSet = { byWindow, series: [] };
   const supabase = await getReadClient();
   if (!supabase) return out;
 
-  const maxW = Math.max(...windows, 1);
-  const sinceIso = new Date(Date.now() - maxW * 86_400_000).toISOString();
+  // Genug Historie laden, dass auch der älteste Verlaufspunkt sein rollierendes
+  // Fenster füllen kann.
+  const lookback = Math.max(...windows, PANIC_SERIES_DAYS + PANIC_SERIES_ROLL);
+  const sinceIso = new Date(Date.now() - lookback * 86_400_000).toISOString();
   const { data } = await supabase
     .from("transfers")
     .select("player_id, to_manager, price, mv_at_time, ts")
@@ -1344,11 +1364,36 @@ export async function getPanicBarometers(
   }
 
   const now = Date.now();
+  const DAY = 86_400_000;
   for (const w of windows) {
-    const cut = now - w * 86_400_000;
+    const cut = now - w * DAY;
     const rws = all.filter((r) => r.ts != null && Date.parse(r.ts) >= cut);
-    out[w] = computePanic(rws, w, pmap, nmap);
+    byWindow[w] = computePanic(rws, w, pmap, nmap);
   }
+
+  // Verlauf: je Tag der letzten PANIC_SERIES_DAYS ein rollierender
+  // (PANIC_SERIES_ROLL Tage) wertgewichteter Overpay-Anteil. Der jüngste Punkt
+  // endet „jetzt" und entspricht damit dem 3-Tage-Barometer.
+  const series: PanicPoint[] = [];
+  for (let k = PANIC_SERIES_DAYS - 1; k >= 0; k--) {
+    const end = now - k * DAY;
+    const start = end - PANIC_SERIES_ROLL * DAY;
+    let sumOverpay = 0;
+    let sumMv = 0;
+    for (const r of all) {
+      if (r.ts == null) continue;
+      const t = Date.parse(r.ts);
+      if (t > start && t <= end) {
+        sumOverpay += r.price - r.mv;
+        sumMv += r.mv;
+      }
+    }
+    series.push({
+      date: new Date(end).toISOString().slice(0, 10),
+      ratio: sumMv > 0 ? sumOverpay / sumMv : null,
+    });
+  }
+  out.series = series;
   return out;
 }
 

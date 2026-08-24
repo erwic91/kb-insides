@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { PanicBarometer as PanicData } from "../lib/db/queries";
+import type { PanicBarometer as PanicData, PanicPoint } from "../lib/db/queries";
 import { eurFull } from "../lib/format";
 
 /** Stimmungsband aus dem Panik-Score (0..1). */
@@ -17,16 +17,52 @@ const fmtPct1 = (x: number) =>
   `${x >= 0 ? "+" : "−"}${Math.abs(x * 100).toFixed(1).replace(".", ",")} %`;
 
 /**
+ * Simple Panik-Verlauf-Sparkline aus den rollierenden Tages-Overpay-Anteilen.
+ * Skaliert auf min..max der vorhandenen Punkte; Nulllinie (0 % Overpay) dezent
+ * markiert. Rendert nichts bei < 2 Datenpunkten.
+ */
+function PanicSparkline({ series }: { series: PanicPoint[] }) {
+  const pts = series.filter((p): p is { date: string; ratio: number } => p.ratio != null);
+  if (pts.length < 2) return null;
+
+  const W = 260;
+  const H = 40;
+  const PAD = 3;
+  const vals = pts.map((p) => p.ratio);
+  const min = Math.min(...vals, 0);
+  const max = Math.max(...vals, 0);
+  const span = max - min || 1;
+  const x = (i: number) => PAD + (i / (pts.length - 1)) * (W - 2 * PAD);
+  const y = (v: number) => PAD + (1 - (v - min) / span) * (H - 2 * PAD);
+  const line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.ratio).toFixed(1)}`).join(" ");
+  const area = `${line} L${x(pts.length - 1).toFixed(1)},${(H - PAD).toFixed(1)} L${x(0).toFixed(1)},${(H - PAD).toFixed(1)} Z`;
+  const zeroY = y(0);
+  const last = pts[pts.length - 1]!;
+  const lastColor = last.ratio > 0 ? "var(--loss)" : "var(--gain)";
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img" aria-label="Panik-Verlauf">
+      <line x1={PAD} y1={zeroY} x2={W - PAD} y2={zeroY} stroke="var(--line)" strokeWidth={1} strokeDasharray="3 3" />
+      <path d={area} fill="var(--signal)" opacity={0.1} />
+      <path d={line} fill="none" stroke="var(--signal)" strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(pts.length - 1)} cy={y(last.ratio)} r={2.6} fill={lastColor} />
+    </svg>
+  );
+}
+
+/**
  * Panik-Barometer: Tacho für die Overpay-Stimmung der Liga. Grün = ruhig,
  * Rot = überhitzt/panisch. Über 1/3/7-Tage-Fenster umschaltbar (Daten für alle
  * Fenster kommen vorberechnet vom Server, Umschalten ohne Roundtrip).
  */
 export default function PanicBarometer({
   set,
+  series,
   windows,
   leagueId,
 }: {
   set: Record<number, PanicData>;
+  series: PanicPoint[];
   windows: number[];
   leagueId: string;
 }) {
@@ -125,6 +161,15 @@ export default function PanicBarometer({
               <div className="note" style={{ marginTop: 10, color: "var(--mute)" }}>
                 Ø {data.avgOverpay >= 0 ? "+" : "−"}
                 {eurFull(Math.abs(data.avgOverpay))} Aufpreis je Kauf
+              </div>
+            )}
+
+            {series.filter((p) => p.ratio != null).length >= 2 && (
+              <div style={{ marginTop: 14 }}>
+                <div className="eyebrow" style={{ fontSize: 10, marginBottom: 2 }}>
+                  Panik-Verlauf · 14 Tage
+                </div>
+                <PanicSparkline series={series} />
               </div>
             )}
 

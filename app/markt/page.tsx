@@ -77,7 +77,12 @@ export default async function MarktPage({
       </div>
 
       <div className="g-2" style={{ marginBottom: 16 }}>
-        <PanicBarometer set={panic} windows={PANIC_WINDOWS} leagueId={league.id} />
+        <PanicBarometer
+          set={panic.byWindow}
+          series={panic.series}
+          windows={PANIC_WINDOWS}
+          leagueId={league.id}
+        />
         {potential && <MarketPotential data={potential} showMoney={showBids} />}
       </div>
 
