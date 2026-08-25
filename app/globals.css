@@ -1387,3 +1387,101 @@ code {
   color: var(--chalk);
   border-color: var(--ink);
 }
+
+/* Kader Bulk-Select + Verkaufswert-Toast */
+.squad-sel th.chk,
+.squad-sel td.chk {
+  width: 34px;
+  text-align: center;
+  padding-left: 10px;
+  padding-right: 4px;
+}
+.squad-sel td.chk input,
+.squad-sel th.chk input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--signal);
+  cursor: pointer;
+}
+.squad-sel tr.sel-on td {
+  background: color-mix(in srgb, var(--signal) 8%, transparent);
+}
+.sale-toast {
+  position: sticky;
+  bottom: 14px;
+  z-index: 45;
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+  pointer-events: none;
+}
+.sale-toast-in {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: var(--ink);
+  color: var(--chalk);
+  border-radius: 12px;
+  padding: 10px 16px 10px 12px;
+  box-shadow: 0 14px 34px rgba(20, 24, 31, 0.35);
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.sale-clear {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: none;
+  color: var(--chalk);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  flex: none;
+}
+.sale-clear:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.sale-count {
+  font-family: var(--display);
+  font-variation-settings: "wght" 700;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.sale-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sale-lbl {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #9aa2ad;
+}
+.sale-val {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 17px;
+  white-space: nowrap;
+}
+.sale-val.sm {
+  font-size: 14px;
+  color: var(--chalk);
+}
+.sale-arrow {
+  color: #9aa2ad;
+  font-size: 15px;
+}
+
+@media (max-width: 560px) {
+  .sale-toast-in {
+    gap: 12px;
+    padding: 9px 12px;
+  }
+  .sale-val {
+    font-size: 15px;
+  }
+}

@@ -281,7 +281,7 @@ export default async function ManagerPage({
                   {squad.rows.length} Spieler · Kaderwert {eur(squad.teamValue)}
                 </span>
               </div>
-              <SquadTable squad={squad} leagueId={league.id} />
+              <SquadTable squad={squad} leagueId={league.id} cash={m.cash} />
             </>
           ) : (
             <div className="notice">
