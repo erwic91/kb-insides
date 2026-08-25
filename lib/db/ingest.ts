@@ -87,6 +87,8 @@ export interface SquadPlayerRow {
   market_value: number | null;
   position: string | null;
   status: number | null;
+  /** Startelf-Wahrscheinlichkeit (Kickbase `lst`); Roh-Code, Zuordnung folgt. */
+  lineup_status: number | null;
 }
 
 /** Täglicher Kaderwert je Manager (kalendertäglich) — Basis für den TV-Trend. */

@@ -136,6 +136,7 @@ async function collectLeagueWide(
               market_value: pl.mv ?? null,
               position: posLabel(pl.pos),
               status: pl.st ?? null,
+              lineup_status: pl.lst ?? null,
             });
             squadPlayerMeta.push({
               id: pl.pi,
