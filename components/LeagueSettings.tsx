@@ -104,6 +104,35 @@ export default function LeagueSettings({
     }
   }
 
+  async function backfill() {
+    if (!current.trackingSince) {
+      setMsg("Bitte zuerst einen Startzeitpunkt setzen & speichern.");
+      return;
+    }
+    setBusy(true);
+    setMsg("Lade gesamte Historie ab Startzeitpunkt … (kann etwas dauern)");
+    try {
+      const res = await fetch(`/api/league/backfill?league=${encodeURIComponent(leagueId)}`, {
+        method: "POST",
+      });
+      if (res.status === 401) throw new Error("Nicht angemeldet — bitte neu einloggen.");
+      if (res.status === 403) throw new Error("Keine Berechtigung für diese Liga.");
+      const data = (await res.json()) as {
+        ok?: boolean;
+        error?: string;
+        transfers?: number;
+        deletedTransfers?: number;
+      };
+      if (!res.ok || !data.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setMsg(`Historie geladen: ${data.transfers ?? 0} Transfers erfasst. Konto ist jetzt rekonstruiert.`);
+      router.refresh();
+    } catch (e) {
+      setMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const typeLabel = (current.gameMode ?? 2) === 2 ? "200 Mio · Nullspieler" : "50 Mio · zugeloste Spieler";
 
   return (
@@ -191,6 +220,22 @@ export default function LeagueSettings({
                   Speichern
                 </button>
               </div>
+
+              <Field label="Historie ab Reset laden (nur bei neu verbundenen Ligen nötig)">
+                <p className="note" style={{ color: "var(--mute)", margin: 0 }}>
+                  Lädt die <strong>gesamte Transferhistorie ab dem Startzeitpunkt</strong> nach und
+                  rekonstruiert Konto &amp; Handelsbilanz vollständig. Erst Startzeitpunkt setzen &amp;
+                  speichern, dann laden. Bestehende, korrekte Ligen brauchen das nicht.
+                </p>
+                <button
+                  className="btn"
+                  onClick={backfill}
+                  disabled={busy || !current.trackingSince}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  Volle Historie ab Startzeitpunkt laden
+                </button>
+              </Field>
 
               {msg && (
                 <div className="note" style={{ color: "var(--ink-soft)" }}>

@@ -86,7 +86,7 @@ export interface LeagueIngestResult {
 async function collectLeagueWide(
   leagueId: string,
   token: string,
-  opts: { recordDailyTv?: boolean } = {},
+  opts: { recordDailyTv?: boolean; fullTransfers?: boolean } = {},
 ): Promise<LeagueIngestResult> {
   try {
     // M2 — Ranking.
@@ -164,10 +164,13 @@ async function collectLeagueWide(
       }
 
       try {
-        // Ab dem jüngsten bekannten Transfer dieses Managers (sonst ab
-        // Tracking-Start). Bereits gespeicherte bleiben in der DB — hier werden
-        // nur neue nachgeladen.
-        const since = latestTransferTs.get(manager.id) ?? trackingSince;
+        // Normal inkrementell: ab dem jüngsten bekannten Transfer dieses Managers
+        // (sonst ab Tracking-Start). Beim Voll-Backfill (fullTransfers) dagegen
+        // IMMER ab Tracking-Start — so wird die gesamte Historie seit dem Reset
+        // nachgeladen (für neu verbundene Ligen).
+        const since = opts.fullTransfers
+          ? trackingSince
+          : latestTransferTs.get(manager.id) ?? trackingSince;
         const tr = await fetchAllTransfers(leagueId, manager.id, { token, since });
         const transferRows = parseTransfers(tr, leagueId, manager.id);
         await upsertTransfers(transferRows);
@@ -385,6 +388,7 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
 export async function runCollectForUser(
   userId: string,
   leagueId?: string,
+  opts: { fullTransfers?: boolean } = {},
 ): Promise<LeagueIngestResult[]> {
   let token: string;
   try {
@@ -410,7 +414,7 @@ export async function runCollectForUser(
 
   const results: LeagueIngestResult[] = [];
   for (const l of targets) {
-    const r = await collectLeagueWide(l.leagueId, token);
+    const r = await collectLeagueWide(l.leagueId, token, { fullTransfers: opts.fullTransfers });
     if (r.day != null) {
       try {
         await collectUserBudget(userId, l.leagueId, token, r.day);
