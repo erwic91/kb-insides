@@ -137,6 +137,7 @@ async function collectLeagueWide(
               position: posLabel(pl.pos),
               status: pl.st ?? null,
               lineup_status: pl.lst ?? null,
+              lineup_order: pl.lo ?? null,
             });
             squadPlayerMeta.push({
               id: pl.pi,

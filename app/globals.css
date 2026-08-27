@@ -1485,3 +1485,43 @@ code {
     font-size: 15px;
   }
 }
+
+/* Aufstellung: Mini-Fußballfeld + „aufgestellt"-Marker */
+:root {
+  --pitch-grass: #15683f;
+  --pitch-line: rgba(255, 255, 255, 0.55);
+  --pitch-jersey: #ffffff;
+  --pitch-jersey-line: #0d3b25;
+}
+.pitch-wrap {
+  max-width: 340px;
+  margin: 0 0 16px;
+}
+.pitch-svg {
+  display: block;
+}
+.pitch-name {
+  fill: #ffffff;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgba(13, 59, 37, 0.65);
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+}
+.pitch-legend {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+.lineup-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gain);
+  margin-left: 7px;
+  vertical-align: middle;
+}

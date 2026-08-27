@@ -899,6 +899,8 @@ export interface MySquadPlayer {
   status: number | null;
   /** Startelf-Wahrscheinlichkeit (Kickbase `lst`); Roh-Code, Zuordnung folgt. */
   lineupStatus: number | null;
+  /** Aufstellungs-Reihenfolge (0 = TW, 1..10 = Feld); null = nicht aufgestellt (Bank). */
+  lineupOrder: number | null;
   /** Letzter Kaufpreis (aus Transfers) — null, wenn nicht erfasst. */
   buyPrice: number | null;
   /** Unrealisierter Transfergewinn = Marktwert − Kaufpreis. */
@@ -944,7 +946,7 @@ export async function getManagerSquad(
 
   const { data } = await supabase
     .from("squad_players")
-    .select("player_id, points, avg_points, market_value, position, status, lineup_status")
+    .select("player_id, points, avg_points, market_value, position, status, lineup_status, lineup_order")
     .eq("league_id", league.id)
     .eq("manager_id", mid)
     .order("market_value", { ascending: false, nullsFirst: false });
@@ -1027,6 +1029,7 @@ export async function getManagerSquad(
       avgPoints: (r.avg_points as number) ?? null,
       status: (r.status as number) ?? null,
       lineupStatus: (r.lineup_status as number) ?? null,
+      lineupOrder: (r.lineup_order as number) ?? null,
       buyPrice: buy,
       profit,
       mvChangeDay,

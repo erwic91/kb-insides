@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { MySquad } from "../lib/db/queries";
 import { eur, eurFull, eurSigned, num } from "../lib/format";
+import LineupPitch from "./LineupPitch";
 
 /**
  * Kader eines Managers als Liste mit allen erfassten Infos (Marktwert, Kaufpreis,
@@ -60,7 +61,9 @@ export default function SquadTable({
   const RED = "#ff6b8a";
 
   return (
-    <div className="table-wrap">
+    <>
+      <LineupPitch rows={squad.rows} />
+      <div className="table-wrap">
       <table className="data squad-sel">
         <thead>
           <tr>
@@ -104,6 +107,9 @@ export default function SquadTable({
                   <Link href={href(`/player/${p.playerId}`)} className="linklike">
                     {p.name}
                   </Link>
+                  {p.lineupOrder != null && (
+                    <span className="lineup-dot" title="In der Aufstellung" aria-label="aufgestellt" />
+                  )}
                 </td>
                 <td className="l muted">{p.team ?? "—"}</td>
                 <td className="l">
@@ -222,6 +228,7 @@ export default function SquadTable({
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

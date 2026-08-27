@@ -90,6 +90,7 @@ export const SquadPlayerSchema = z
     mv: z.coerce.number().nullish(), // Marktwert
     st: z.coerce.number().nullish(), // Status (0 = fit; >0 = Ausfall/angeschlagen)
     lst: z.coerce.number().nullish(), // Aufstellungs-Status
+    lo: z.coerce.number().nullish(), // Lineup-Order (0 = TW, 1..10 = Feld; fehlt = Bank)
     tid: z.coerce.string().nullish(), // Team-ID
     // Hinweis: Der Squad-Endpoint liefert KEINE Punkte (kein `p`/`ap`),
     // nur Marktwert-Felder (mvt/mvgl/sdmvt/…). Punkte kommen aus anderen Quellen.
