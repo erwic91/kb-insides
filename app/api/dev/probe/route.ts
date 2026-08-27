@@ -103,17 +103,74 @@ export async function GET(request: Request) {
     }
     report.A_transferDepth = transferDepth;
 
-    // Sample-Spieler aus dem Kader des ersten Managers.
+    // Sample-Spieler + D) Roh-Kader (alle Felder je Spieler) für Aufstellungs-/
+    // Status-Analyse.
+    const sampleManagerId = managers[0]?.id ?? null;
     if (managers[0]) {
       try {
         const squad = await fetchManagerSquad(leagueId, managers[0].id, { token });
         samplePlayerId = squad.it.find((p) => p.pi != null)?.pi ?? null;
-      } catch {
-        /* ignore */
+        const items = squad.it as unknown as Record<string, unknown>[];
+        // Verteilung von st / lst über den Kader (für die Status-Zuordnung).
+        const dist = (key: string) => {
+          const m: Record<string, number> = {};
+          for (const it of items) {
+            const v = String((it as Record<string, unknown>)[key] ?? "∅");
+            m[v] = (m[v] ?? 0) + 1;
+          }
+          return m;
+        };
+        report.D_squadRaw = {
+          count: items.length,
+          allKeys: items[0] ? Object.keys(items[0]) : [],
+          firstTwo: items.slice(0, 2),
+          stDistribution: dist("st"),
+          lstDistribution: dist("lst"),
+        };
+      } catch (e) {
+        report.D_squadRaw = { error: (e as Error).message };
       }
       await politeDelay();
     }
     report.samplePlayerId = samplePlayerId;
+
+    // E) Aufstellungs-Endpunkte (Kandidaten) — für das Fußballfeld.
+    if (sampleManagerId) {
+      const lineupCandidates = [
+        `/v4/leagues/${leagueId}/managers/${sampleManagerId}/lineup`,
+        `/v4/leagues/${leagueId}/managers/${sampleManagerId}/teamcenter`,
+        `/v4/leagues/${leagueId}/lineup`,
+        `/v4/leagues/${leagueId}/teamcenter`,
+      ];
+      const lineupEndpoints: Record<string, unknown> = {};
+      for (const path of lineupCandidates) {
+        try {
+          const raw = await kbFetch<unknown>(path, { token });
+          lineupEndpoints[path] = { ok: true, summary: summarize(raw), raw };
+        } catch (e) {
+          lineupEndpoints[path] = { ok: false, error: (e as Error).message };
+        }
+        await politeDelay();
+      }
+      report.E_lineupEndpoints = lineupEndpoints;
+    }
+
+    // F) Spielerprofil-Werte (prob/st/stl/iposl/pos) — für die Status-Icons.
+    if (samplePlayerId) {
+      try {
+        const prof = (await kbFetch<Record<string, unknown>>(
+          `/v4/leagues/${leagueId}/players/${samplePlayerId}`,
+          { token },
+        )) ?? {};
+        const keys = ["prob", "st", "stl", "iposl", "pos", "sl", "day", "mdsum"];
+        report.F_playerProfileValues = Object.fromEntries(
+          keys.filter((k) => k in prof).map((k) => [k, prof[k]]),
+        );
+      } catch (e) {
+        report.F_playerProfileValues = { error: (e as Error).message };
+      }
+      await politeDelay();
+    }
 
     // B) Kandidaten für eine Transfer-/Besitzhistorie PRO SPIELER.
     if (samplePlayerId) {
