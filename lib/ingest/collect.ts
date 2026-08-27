@@ -46,6 +46,7 @@ import {
 import type { PlayerRow } from "./market";
 import { syncExternalInjuries } from "./externalNews";
 import { syncMarketPool } from "./marketPool";
+import { syncLineupProb } from "./lineupProb";
 import { snapshotManagerMetrics } from "./managerMetrics";
 
 const SQUAD_POS: Record<number, string> = { 1: "TW", 2: "ABW", 3: "MF", 4: "ANG" };
@@ -375,6 +376,12 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
       await syncMarketPool(anyToken);
     } catch {
       // Pool-Sync best-effort.
+    }
+    // Startelf-Wahrscheinlichkeit (prob) gestaffelt anreichern (stalest zuerst).
+    try {
+      await syncLineupProb(anyToken);
+    } catch {
+      // prob-Sync best-effort.
     }
   }
 

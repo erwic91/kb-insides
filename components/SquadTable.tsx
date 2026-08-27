@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { MySquad } from "../lib/db/queries";
 import { eur, eurFull, eurSigned, num } from "../lib/format";
 import LineupPitch from "./LineupPitch";
+import LineupProbIcon from "./LineupProbIcon";
 
 /**
  * Kader eines Managers als Liste mit allen erfassten Infos (Marktwert, Kaufpreis,
@@ -104,6 +105,7 @@ export default function SquadTable({
                 </td>
                 <td className="l muted">{p.position ?? "—"}</td>
                 <td className="l">
+                  <LineupProbIcon prob={p.prob} />
                   <Link href={href(`/player/${p.playerId}`)} className="linklike">
                     {p.name}
                   </Link>

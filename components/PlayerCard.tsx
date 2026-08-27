@@ -4,6 +4,15 @@ import Link from "next/link";
 import type { PlayerCard as CardData } from "../lib/db/queries";
 import { eur, eurFull, eurSigned, num, pct, date } from "../lib/format";
 import PlayerMvChart from "./PlayerMvChart";
+import LineupProbIcon from "./LineupProbIcon";
+
+const PROB_LABEL: Record<number, string> = {
+  1: "Startelf sicher",
+  2: "wahrscheinlich",
+  3: "fraglich",
+  4: "unwahrscheinlich",
+  5: "spielt nicht",
+};
 
 function leagueHref(base: string, leagueId: string): string {
   return `${base}?league=${encodeURIComponent(leagueId)}`;
@@ -54,7 +63,15 @@ export default function PlayerCard({ data, leagueId }: { data: CardData; leagueI
             {[data.position, data.team ? `Team ${data.team}` : null].filter(Boolean).join(" · ") || "—"}
           </div>
         </div>
-        {injured && <span className="pc-status">{data.statusLabel}</span>}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {data.prob != null && PROB_LABEL[data.prob] && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--mute)" }}>
+              <LineupProbIcon prob={data.prob} />
+              {PROB_LABEL[data.prob]}
+            </span>
+          )}
+          {injured && <span className="pc-status">{data.statusLabel}</span>}
+        </div>
       </div>
 
       {data.injury && (

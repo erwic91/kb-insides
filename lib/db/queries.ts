@@ -901,6 +901,8 @@ export interface MySquadPlayer {
   lineupStatus: number | null;
   /** Aufstellungs-Reihenfolge (0 = TW, 1..10 = Feld); null = nicht aufgestellt (Bank). */
   lineupOrder: number | null;
+  /** Startelf-Wahrscheinlichkeit (Kickbase `prob`, 1 = sicher … 5 = spielt nicht). */
+  prob: number | null;
   /** Letzter Kaufpreis (aus Transfers) — null, wenn nicht erfasst. */
   buyPrice: number | null;
   /** Unrealisierter Transfergewinn = Marktwert − Kaufpreis. */
@@ -955,11 +957,16 @@ export async function getManagerSquad(
   const pids = [...new Set(data.map((r) => r.player_id as string))];
   const { data: pdata } = await supabase
     .from("players")
-    .select("id, name, position, team")
+    .select("id, name, position, team, lineup_prob")
     .in("id", pids);
-  const pmap = new Map<string, { name?: string; position?: string; team?: string }>();
+  const pmap = new Map<string, { name?: string; position?: string; team?: string; prob?: number | null }>();
   for (const p of pdata ?? [])
-    pmap.set(p.id as string, { name: p.name as string, position: p.position as string, team: p.team as string });
+    pmap.set(p.id as string, {
+      name: p.name as string,
+      position: p.position as string,
+      team: p.team as string,
+      prob: (p.lineup_prob as number) ?? null,
+    });
 
   // Marktwert-Tagesentwicklung für ALLE Kaderspieler aus den nächtlichen
   // player_mv_daily-Snapshots: die DREI jüngsten Snapshots je Spieler.
@@ -1030,6 +1037,7 @@ export async function getManagerSquad(
       status: (r.status as number) ?? null,
       lineupStatus: (r.lineup_status as number) ?? null,
       lineupOrder: (r.lineup_order as number) ?? null,
+      prob: meta?.prob ?? null,
       buyPrice: buy,
       profit,
       mvChangeDay,
@@ -1651,6 +1659,8 @@ export interface PlayerCard {
   /** Kickbase-Status (0 = fit, >0 = Ausfall) — nur wenn der Spieler im Kader ist. */
   status: number | null;
   statusLabel: string;
+  /** Startelf-Wahrscheinlichkeit (Kickbase `prob`, 1 = sicher … 5 = spielt nicht). */
+  prob: number | null;
   latestMv: number | null;
   high: number | null;
   low: number | null;
@@ -1707,6 +1717,14 @@ export async function getPlayerCard(
     .maybeSingle();
 
   if (!detail && !sp && (curve == null || curve.points.length === 0)) return null;
+
+  // Startelf-Wahrscheinlichkeit (spielerglobal, angereichert).
+  const { data: prow } = await supabase
+    .from("players")
+    .select("lineup_prob")
+    .eq("id", playerId)
+    .maybeSingle();
+  const prob = (prow?.lineup_prob as number) ?? null;
 
   const name = detail?.name ?? `#${playerId}`;
   const position = detail?.position ?? null;
@@ -1807,6 +1825,7 @@ export async function getPlayerCard(
     team,
     status,
     statusLabel: statusLabel(status),
+    prob,
     latestMv,
     high: curve?.high ?? null,
     low: curve?.low ?? null,
