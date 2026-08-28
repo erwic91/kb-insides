@@ -1857,6 +1857,67 @@ export interface CalibrationRow {
   delta: number | null;
 }
 
+export interface CalibrationLive {
+  /** Rekonstruierter Kontostand des eigenen Managers (Formel). */
+  reconstructed: number | null;
+  /** Echter Kontostand aus Kickbase (/me/budget). */
+  actual: number | null;
+  /** Differenz = berechnet − echt. 0 (bzw. < 1.000 €) = Formel bestätigt. */
+  delta: number | null;
+  /** Plausible Ursachen bei Differenz — bewusst ohne erfundene Genauigkeit. */
+  hints: string[];
+}
+
+/**
+ * Live-Kalibrierung: vergleicht für den EIGENEN Manager den rekonstruierten
+ * Kontostand (Formel) mit dem echten Wert aus Kickbase. Steht die Differenz auf
+ * 0 €, ist die Formel bewiesen — und gilt dann auch für alle Gegner. Null, wenn
+ * kein eigener Manager/echter Wert bekannt ist.
+ */
+export async function getCalibrationLive(league: LeagueLite): Promise<CalibrationLive | null> {
+  const myAccess = await getMyAccess();
+  if (!myAccess) return null;
+  const mid = myAccess.kbManagerId;
+  const day = await getLatestDay(league.id);
+  if (day == null) return null;
+
+  const [myBudget, adjustments, bonusPoints, transfersByMgr] = await Promise.all([
+    getMyBudget(league.id),
+    getAdjustmentSums(league.id),
+    getMatchdayBonusPoints(league.id),
+    getTransfersByManager(league.id),
+  ]);
+  const actual = myBudget.get(day) ?? null;
+  if (actual == null) return null; // ohne echten Wert keine Kalibrierung
+
+  const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
+  const all = transfersByMgr.get(mid) ?? [];
+  const mine = sinceMs != null ? all.filter((t) => t.ts != null && Date.parse(t.ts) >= sinceMs) : all;
+  const loginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
+  const matchdayBonus =
+    league.gameMode === 2 ? (bonusPoints.get(mid) ?? 0) * MATCHDAY_BONUS_PER_POINT : 0;
+  const prizes = loginBonus + (adjustments.get(mid) ?? 0) + matchdayBonus;
+  const reconstructed =
+    league.startBudget > 0
+      ? reconstructCash(mine, { startBudget: league.startBudget, prizes })
+      : null;
+  const delta = reconstructed != null ? reconstructed - actual : null;
+
+  const hints: string[] = [];
+  if (delta != null && Math.abs(delta) >= 1000) {
+    if (delta > 0) {
+      hints.push(
+        "Berechnet zu hoch — mögliche Ursache: eine nicht erfasste Strafe (als Korrektur eintragen) oder zu viel angesetzter Login-Bonus.",
+      );
+    } else {
+      hints.push(
+        "Berechnet zu niedrig — mögliche Ursache: fehlende Verkäufe/Boni oder weniger Login-Bonus (nicht täglich eingeloggt?).",
+      );
+    }
+  }
+  return { reconstructed, actual, delta, hints };
+}
+
 export async function getCalibration(league: LeagueLite): Promise<CalibrationRow | null> {
   const supabase = await getReadClient();
   if (!supabase) return null;

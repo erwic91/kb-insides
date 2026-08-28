@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import {
   resolveLeague,
   getManagerTable,
-  getCalibration,
+  getCalibrationLive,
   getSquadLandscape,
   getMySquad,
   getMyAccess,
@@ -15,6 +15,7 @@ import InfoDot from "../components/InfoDot";
 import ManagerTable from "../components/ManagerTable";
 import LeagueSettings from "../components/LeagueSettings";
 import SquadTable from "../components/SquadTable";
+import CalibrationPanel from "../components/CalibrationPanel";
 import { SpielerLandschaft, Formkurve } from "../components/Insights";
 import { setHiddenManager } from "./manager/[id]/actions";
 import Link from "next/link";
@@ -59,7 +60,7 @@ export default async function DashboardPage({
 
   const { day, rows, hidden } = await getManagerTable(league);
   const [calibration, landscape, squad] = await Promise.all([
-    getCalibration(league),
+    getCalibrationLive(league),
     getSquadLandscape(league),
     getMySquad(league),
   ]);
@@ -155,15 +156,8 @@ export default async function DashboardPage({
       </div>
 
       {showMoney && calibration && (
-        <div className={`notice ${calibration.delta === 0 ? "" : "warn"}`}>
-          {calibration.delta === 0 ? (
-            <span className="badge accent">bestätigt</span>
-          ) : (
-            <span className="badge">geschätzt</span>
-          )}{" "}
-          Selbstkalibrierung: Rekonstruktion <strong>{eur(calibration.myReconstructed)}</strong> vs.{" "}
-          <code>/me/budget</code> <strong>{eur(calibration.myActual)}</strong> · Δ{" "}
-          <strong>{eurSigned(calibration.delta)}</strong>
+        <div style={{ marginBottom: 16 }}>
+          <CalibrationPanel data={calibration} />
         </div>
       )}
 

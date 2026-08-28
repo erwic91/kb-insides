@@ -52,6 +52,23 @@ export default function SquadTable({
     setSel(() => (allSelected ? new Set() : new Set(squad.rows.map((p) => p.playerId))));
   const clear = () => setSel(new Set());
 
+  // „So wenig wie möglich": kleinste Auswahl (teuerste zuerst), die das Konto
+  // ins Plus bringt — damit möglichst wenige Spieler gehen müssen.
+  const minSell = () => {
+    if (cash == null || cash >= 0) return;
+    const need = -cash;
+    const pick = new Set<string>();
+    let acc = 0;
+    for (const p of [...squad.rows].sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0))) {
+      if (acc >= need) break;
+      const mv = p.marketValue ?? 0;
+      if (mv <= 0) continue;
+      pick.add(p.playerId);
+      acc += mv;
+    }
+    setSel(pick);
+  };
+
   const selRows = squad.rows.filter((p) => sel.has(p.playerId));
   const sumMv = selRows.reduce((s, p) => s + (p.marketValue ?? 0), 0);
   const cashKnown = cash != null;
@@ -64,6 +81,16 @@ export default function SquadTable({
   return (
     <>
       <LineupPitch rows={squad.rows} />
+      {cashKnown && cash! < 0 && (
+        <div className="minus-bar">
+          <span>
+            Konto im Minus: <strong style={{ color: "var(--loss)" }}>{eur(cash)}</strong>
+          </span>
+          <button type="button" className="btn" onClick={minSell}>
+            So wenig wie möglich verkaufen
+          </button>
+        </div>
+      )}
       <div className="table-wrap">
       <table className="data squad-sel">
         <thead>
