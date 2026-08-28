@@ -12,7 +12,8 @@ import {
 import { eur, eurFull, eurSigned, num, pct } from "../lib/format";
 import RefreshButton from "../components/RefreshButton";
 import InfoDot from "../components/InfoDot";
-import ManagerTable from "../components/ManagerTable";
+import ManagerExplorer from "../components/ManagerExplorer";
+import DeadlineDayToggle from "../components/DeadlineDayToggle";
 import LeagueSettings from "../components/LeagueSettings";
 import SquadTable from "../components/SquadTable";
 import CalibrationPanel from "../components/CalibrationPanel";
@@ -123,12 +124,13 @@ export default async function DashboardPage({
               bonusMode: league.bonusMode,
             }}
           />
+          <DeadlineDayToggle leagueId={league.id} />
           <RefreshButton leagueId={league.id} />
         </div>
       </div>
 
       <div className="section">
-        <ManagerTable
+        <ManagerExplorer
           rows={rows}
           showMoney={showMoney}
           leagueId={league.id}

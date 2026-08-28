@@ -172,6 +172,8 @@ export default function ManagerTable({
   title,
   info,
   note,
+  selectedId,
+  onSelect,
 }: {
   rows: ManagerTableRow[];
   showMoney: boolean;
@@ -180,6 +182,9 @@ export default function ManagerTable({
   title?: string;
   info?: string;
   note?: string;
+  /** Explorer-Modus: Zeilen sind aktivierbar (Klick/Pfeiltasten) statt Links. */
+  selectedId?: string | null;
+  onSelect?: (id: string) => void;
 }) {
   // Optionale Spalten (Aktivität, Login-Bonus) sind per Default aus und werden
   // über das Zahnrad einzeln eingeblendet.
@@ -226,6 +231,27 @@ export default function ManagerTable({
   const clickSort = (k: Key) =>
     setSort((s) => (s.key === k ? { key: k, dir: (s.dir * -1) as 1 | -1 } : { key: k, dir: -1 }));
   const arrow = (k: Key) => (sort.key === k ? (sort.dir < 0 ? " ↓" : " ↑") : "");
+
+  // Explorer-Modus: Pfeil hoch/runter bewegt die aktive Zeile durch die aktuell
+  // sortierte Reihenfolge (erst ab der ersten Auswahl per Klick).
+  useEffect(() => {
+    if (!onSelect) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      const tag = (document.activeElement?.tagName ?? "").toUpperCase();
+      if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+      if (!selectedId) return;
+      const ids = sorted.map((r) => r.id);
+      const cur = ids.indexOf(selectedId);
+      if (cur < 0) return;
+      e.preventDefault();
+      const next = e.key === "ArrowDown" ? Math.min(ids.length - 1, cur + 1) : Math.max(0, cur - 1);
+      const nid = ids[next];
+      if (nid && nid !== selectedId) onSelect(nid);
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onSelect, selectedId, sorted]);
 
   // Platzierungs-Pfeile REAGIEREN auf die sortierte Spalte: Rang der aktuell
   // sortierten Kennzahl (heute) vs. Rang, den der Vortags-Snapshot derselben
@@ -325,14 +351,23 @@ export default function ManagerTable({
         </thead>
         <tbody>
           {sorted.map((r, i) => (
-            <tr key={r.id}>
+            <tr
+              key={r.id}
+              className={onSelect && selectedId === r.id ? "row-sel" : ""}
+              onClick={onSelect ? () => onSelect(r.id) : undefined}
+              style={onSelect ? { cursor: "pointer" } : undefined}
+            >
               <td className="rank l">{r.active ? i + 1 : "—"}</td>
               <td className="l">
                 <div className="mgr">
                   <span className="avatar">{initials(r.name)}</span>
-                  <Link href={leagueHref(`/manager/${r.id}`)} className="nm linklike">
-                    {r.name}
-                  </Link>
+                  {onSelect ? (
+                    <span className="nm">{r.name}</span>
+                  ) : (
+                    <Link href={leagueHref(`/manager/${r.id}`)} className="nm linklike">
+                      {r.name}
+                    </Link>
+                  )}
                   {(() => {
                     const d = rankDeltas.get(r.id);
                     if (d == null || d === 0) return null;

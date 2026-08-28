@@ -1725,3 +1725,77 @@ code {
 @media (max-width: 560px) {
   .kr-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Dashboard-Explorer: Tabelle + Detailpanel daneben */
+.mgr-explorer {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+.mgr-explorer-main {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.mgr-explorer-side {
+  flex: 0 0 420px;
+  position: sticky;
+  top: 72px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+.mgr-panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.mgr-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.mgr-panel-title {
+  font-family: var(--display);
+  font-size: 20px;
+  line-height: 1.1;
+  margin: 3px 0 0;
+}
+.mgr-panel-body {
+  padding: 14px 18px 20px;
+}
+.tbl tr.row-sel td {
+  background: color-mix(in srgb, var(--signal) 10%, var(--paper));
+}
+.tbl tr.row-sel td:first-child {
+  box-shadow: inset 3px 0 0 var(--signal);
+}
+
+/* Ghost-Button + aktiver Deadline-Day-Toggle */
+.btn.ghost {
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.btn.ghost:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+.btn.ghost.dd-on {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: #fff;
+}
+
+@media (max-width: 1024px) {
+  .mgr-explorer {
+    flex-direction: column;
+  }
+  .mgr-explorer-side {
+    flex: none;
+    width: 100%;
+    position: static;
+    max-height: none;
+  }
+}
