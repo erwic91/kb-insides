@@ -1685,6 +1685,8 @@ export interface PlayerCard {
   profit: number | null;
   transfers: PlayerCardTransfer[];
   transferCount: number;
+  /** Bietrechner: aktive Manager (ohne Besitzer) nach Max-Gebot, wer den MW packt. */
+  bidders: { managerId: string; managerName: string; maxBid: number; canAfford: boolean }[];
   /** Externe Ausfall-Meldung (api-football), falls vorhanden. */
   injury: { type: string | null; reason: string | null; fixtureDate: string | null } | null;
 }
@@ -1818,6 +1820,21 @@ export async function getPlayerCard(
       }
     : null;
 
+  // Bietrechner: Wer könnte diesen Spieler mit einem Max-Gebot holen?
+  let bidders: PlayerCard["bidders"] = [];
+  if (latestMv != null) {
+    const { rows } = await getManagerTable(league);
+    bidders = rows
+      .filter((r) => r.active && r.maxBid != null && r.id !== holder?.managerId)
+      .map((r) => ({
+        managerId: r.id,
+        managerName: r.name,
+        maxBid: r.maxBid as number,
+        canAfford: (r.maxBid as number) >= latestMv,
+      }))
+      .sort((a, b) => b.maxBid - a.maxBid);
+  }
+
   return {
     id: playerId,
     name,
@@ -1844,6 +1861,7 @@ export async function getPlayerCard(
     profit,
     transfers: detail?.transfers ?? [],
     transferCount: detail?.transfers.length ?? 0,
+    bidders,
     injury,
   };
 }

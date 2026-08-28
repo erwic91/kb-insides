@@ -4,6 +4,7 @@ import {
   getBidAdvisor,
   getPanicBarometers,
   getMarketPotential,
+  getManagerTable,
   PANIC_WINDOWS,
 } from "../../lib/db/queries";
 import { computeAutoTargets } from "../../lib/compute/autotargets";
@@ -11,6 +12,7 @@ import { eur } from "../../lib/format";
 import MarketRadar from "../../components/MarketRadar";
 import PanicBarometer from "../../components/PanicBarometer";
 import MarketPotential from "../../components/MarketPotential";
+import Kaufrechner from "../../components/Kaufrechner";
 
 export const dynamic = "force-dynamic";
 
@@ -41,11 +43,13 @@ export default async function MarktPage({
   }
 
   const { listings, advice } = await getBidAdvisor(league);
-  const [panic, potential] = await Promise.all([
+  const [panic, potential, mgrTable] = await Promise.all([
     getPanicBarometers(league),
     getMarketPotential(league),
+    getManagerTable(league),
   ]);
   const showBids = league.startBudget > 0;
+  const me = mgrTable.rows.find((r) => r.isMe);
   const adviceObj = Object.fromEntries(advice);
   const href = (base: string) => `${base}?league=${encodeURIComponent(league.id)}`;
 
@@ -85,6 +89,12 @@ export default async function MarktPage({
         />
         {potential && <MarketPotential data={potential} showMoney={showBids} />}
       </div>
+
+      {showBids && me && me.cash != null && me.teamValue != null && (
+        <div style={{ marginBottom: 16 }}>
+          <Kaufrechner cash={me.cash} teamValue={me.teamValue} />
+        </div>
+      )}
 
       {autoTargets.length > 0 && (
         <div className="panel" style={{ marginBottom: 16 }}>

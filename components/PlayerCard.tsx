@@ -193,6 +193,36 @@ export default function PlayerCard({ data, leagueId }: { data: CardData; leagueI
         </section>
       </div>
 
+      {/* Bietrechner: wer könnte mitbieten */}
+      {data.bidders.length > 0 && data.latestMv != null && (
+        <section className="pc-section">
+          <p className="pc-section-title">
+            Wer kann mitbieten? · {data.bidders.filter((b) => b.canAfford).length} von {data.bidders.length}
+          </p>
+          <ul className="pc-bidders">
+            {data.bidders.slice(0, 8).map((b) => (
+              <li key={b.managerId}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ color: b.canAfford ? "var(--gain)" : "var(--mute)" }}>
+                    {b.canAfford ? "✓" : "✕"}
+                  </span>
+                  <Link href={leagueHref(`/manager/${b.managerId}`, leagueId)} className="linklike">
+                    {b.managerName}
+                  </Link>
+                </span>
+                <span className="num" style={{ color: b.canAfford ? "var(--ink)" : "var(--mute)" }}>
+                  {eur(b.maxBid)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="note" style={{ marginTop: 6, color: "var(--mute)" }}>
+            Max-Gebot ≥ aktueller Marktwert ({eur(data.latestMv)}) = kann diesen Spieler ohne
+            vorherigen Verkauf holen.
+          </p>
+        </section>
+      )}
+
       {/* Transferhistorie */}
       {data.transfers.length > 0 && (
         <section className="pc-section">

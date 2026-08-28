@@ -1666,3 +1666,62 @@ code {
   margin-top: 4px;
   padding-top: 10px;
 }
+
+/* Bietrechner-Liste in der Spielerkarte */
+.pc-bidders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+.pc-bidders li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pc-bidders li:last-child {
+  border-bottom: none;
+}
+.pc-bidders .num {
+  font-family: var(--mono);
+}
+
+/* Kaufrechner */
+.kr-input {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 6px 9px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  max-width: 150px;
+}
+.kr-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.kr-tile {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: var(--chalk);
+}
+.kr-lbl {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.kr-val {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  margin-top: 3px;
+}
+@media (max-width: 560px) {
+  .kr-grid { grid-template-columns: repeat(2, 1fr); }
+}
