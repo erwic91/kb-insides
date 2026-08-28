@@ -84,21 +84,28 @@ export default function DeadlineDayToggle({ leagueId }: { leagueId?: string }) {
     };
   }, [active, leagueId, router]);
 
+  const toggle = () => {
+    const v = !active;
+    setActive(v);
+    persist(v);
+    setMsg(v ? "Deadline Day aktiv — Update alle 5 Min." : "");
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-      <button
-        type="button"
-        className={`btn ghost ${active ? "dd-on" : ""}`}
-        onClick={() => {
-          const v = !active;
-          setActive(v);
-          persist(v);
-          setMsg(v ? "Deadline Day aktiv — Update alle 5 Min." : "");
-        }}
-        title="Alle 5 Minuten automatisch aktualisieren (nur bei offenem Tab)"
-      >
-        {active ? "● Deadline Day" : "Deadline Day"}
-      </button>
+      <label className="dd-switch-wrap" title="Alle 5 Minuten automatisch aktualisieren (nur bei offenem Tab)">
+        <span className="dd-label">Deadline Day</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={active}
+          aria-label="Deadline Day automatische Aktualisierung"
+          className={`switch ${active ? "on" : ""}`}
+          onClick={toggle}
+        >
+          <span className="switch-knob" />
+        </button>
+      </label>
       {active && msg && (
         <span className="muted" style={{ fontSize: 11, textAlign: "right", maxWidth: 260 }}>
           {msg}

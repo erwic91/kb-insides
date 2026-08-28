@@ -18,7 +18,7 @@
   --body: var(--font-body, "IBM Plex Sans"), system-ui, sans-serif;
   --mono: var(--font-mono, "IBM Plex Mono"), ui-monospace, monospace;
 
-  --wrap: 1440px;
+  --wrap: 1840px;
 }
 
 * {
@@ -1798,4 +1798,78 @@ code {
     position: static;
     max-height: none;
   }
+}
+
+/* Toggle-Switch (Deadline Day) */
+.dd-switch-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.dd-label {
+  font-family: var(--display);
+  font-variation-settings: "wght" 600;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: none;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--line);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.switch.on {
+  background: var(--signal);
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(20, 24, 31, 0.35);
+  transition: transform 0.15s ease;
+}
+.switch.on .switch-knob {
+  transform: translateX(18px);
+}
+
+/* Kompakte Kennzahlen im Manager-Panel (max. schmaler Header) */
+.mp-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 8px 0 10px;
+  max-height: 300px;
+}
+.mp-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mp-m-lbl {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.mp-m-val {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
 }

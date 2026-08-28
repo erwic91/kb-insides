@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ManagerTableRow } from "../lib/db/queries";
 import type { ManagerPanelData } from "../app/manager/panelAction";
-import { eur, eurFull, eurSigned, num, pct, date } from "../lib/format";
+import { eur, eurFull, eurSigned, num, date } from "../lib/format";
 import SquadTable from "./SquadTable";
 import OffcanvasTabs from "./OffcanvasTabs";
 
@@ -88,41 +88,34 @@ export default function ManagerPanel({
       </div>
 
       <div className="mgr-panel-body">
-        <div className="grid grid-3">
-          <div className="card card-pad tile">
-            <div className="label">Kaderwert</div>
-            <div className="value sm">{eur(row.teamValue)}</div>
+        <div className="mp-metrics">
+          <div className="mp-metric">
+            <span className="mp-m-lbl">Kaderwert</span>
+            <span className="mp-m-val" title={eurFull(row.teamValue)}>{eur(row.teamValue)}</span>
           </div>
-          <div className="card card-pad tile">
-            <div className="label">Punkte</div>
-            <div className="value sm">{num(row.points)}</div>
+          <div className="mp-metric">
+            <span className="mp-m-lbl">Punkte</span>
+            <span className="mp-m-val">{num(row.points)}</span>
           </div>
-          <div className="card card-pad tile">
-            <div className="label">Konto</div>
-            <div className="value sm" style={{ color: (row.cash ?? 0) < 0 ? "var(--loss)" : undefined }}>
+          <div className="mp-metric">
+            <span className="mp-m-lbl">Konto</span>
+            <span className="mp-m-val" style={{ color: (row.cash ?? 0) < 0 ? "var(--loss)" : undefined }}>
               {eur(row.cash)}
-            </div>
+            </span>
           </div>
-          <div className="card card-pad tile">
-            <div className="label">Max-Gebot</div>
-            <div className="value sm">{eur(row.maxBid)}</div>
+          <div className="mp-metric">
+            <span className="mp-m-lbl">Max-Gebot</span>
+            <span className="mp-m-val">{eur(row.maxBid)}</span>
           </div>
-          <div className="card card-pad tile">
-            <div className="label">Gesamt</div>
-            <div className="value sm">{eur(row.total)}</div>
-          </div>
-          <div className="card card-pad tile">
-            <div className="label">Realis. Gewinn</div>
-            <div className="value sm">
-              {m ? eurSigned(m.trade.profit) : <span className="muted">…</span>}
-            </div>
+          <div className="mp-metric">
+            <span className="mp-m-lbl">Gesamt</span>
+            <span className="mp-m-val" title={eurFull(row.total)}>{eur(row.total)}</span>
           </div>
         </div>
 
         {m && (
-          <div className="note" style={{ margin: "10px 0 4px", color: "var(--mute)" }}>
-            Käufe {eur(m.bought)} · Verkäufe {eur(m.sold)} · Netto {eurSigned(net ?? 0)} ·{" "}
-            {m.trade.closedTrades} Trades · Treffer {pct(m.trade.hitRate)}
+          <div className="note" style={{ margin: "2px 0 8px", color: "var(--mute)", fontSize: 11 }}>
+            Käufe {eur(m.bought)} · Verkäufe {eur(m.sold)} · Netto {eurSigned(net ?? 0)}
           </div>
         )}
 
