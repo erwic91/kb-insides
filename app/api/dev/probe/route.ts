@@ -172,6 +172,48 @@ export async function GET(request: Request) {
       await politeDelay();
     }
 
+    // G) Aktivitätsfeed — Kandidaten-Endpunkte + Event-Typen (für echte
+    //    Login-Boni, Strafen und Marktauftritte).
+    {
+      const feedCandidates = [
+        `/v4/leagues/${leagueId}/activitiesFeed`,
+        `/v4/leagues/${leagueId}/activitiesFeed?max=30`,
+        `/v4/leagues/${leagueId}/activity`,
+        `/v4/leagues/${leagueId}/ranking/activities`,
+        `/v4/leagues/${leagueId}/activities`,
+      ];
+      const feed: Record<string, unknown> = {};
+      for (const path of feedCandidates) {
+        try {
+          const raw = (await kbFetch<Record<string, unknown>>(path, { token })) ?? {};
+          const items = Array.isArray(raw.af)
+            ? (raw.af as unknown[])
+            : Array.isArray(raw.it)
+              ? (raw.it as unknown[])
+              : [];
+          // Verteilung der Event-Typen (Feld `t`) + je Typ ein Beispiel.
+          const typeCount: Record<string, number> = {};
+          const sampleByType: Record<string, unknown> = {};
+          for (const it of items as Record<string, unknown>[]) {
+            const t = String(it.t ?? "?");
+            typeCount[t] = (typeCount[t] ?? 0) + 1;
+            if (!(t in sampleByType)) sampleByType[t] = it;
+          }
+          feed[path] = {
+            ok: true,
+            topKeys: Object.keys(raw),
+            itemCount: items.length,
+            typeCount,
+            sampleByType,
+          };
+        } catch (e) {
+          feed[path] = { ok: false, error: (e as Error).message };
+        }
+        await politeDelay();
+      }
+      report.G_activityFeed = feed;
+    }
+
     // B) Kandidaten für eine Transfer-/Besitzhistorie PRO SPIELER.
     if (samplePlayerId) {
       const candidates = [
