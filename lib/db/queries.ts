@@ -341,11 +341,14 @@ export async function resolveLeague(requested?: string): Promise<LeagueLite | nu
 async function getLatestDay(leagueId: string): Promise<number | null> {
   const supabase = await getReadClient();
   if (!supabase) return null;
+  // Nach jüngstem Snapshot (ts) ordnen, NICHT nach Spieltagsnummer: bei einem
+  // Saisonwechsel startet die Nummerierung neu bei 1, und MAX(day) würde den
+  // veralteten Vorsaison-Spieltag (34) statt des aktuellen (1) liefern.
   const { data, error } = await supabase
     .from("manager_snapshots")
     .select("day")
     .eq("league_id", leagueId)
-    .order("day", { ascending: false })
+    .order("ts", { ascending: false })
     .limit(1);
   if (error || !data || data.length === 0) return null;
   return (data[0]?.day as number) ?? null;
@@ -598,7 +601,9 @@ export async function getManagerDetail(
     .select("day, team_value, points, streak, squad_size")
     .eq("league_id", league.id)
     .eq("manager_id", managerId)
-    .order("day", { ascending: true });
+    // Chronologisch nach ts (nicht nach Spieltagsnummer) — sonst gilt beim
+    // Saisonwechsel der veraltete Vorsaison-Spieltag als „aktuell".
+    .order("ts", { ascending: true });
 
   const history = (snaps ?? []).map((s) => ({
     day: s.day as number,
