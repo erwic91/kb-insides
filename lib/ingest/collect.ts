@@ -9,6 +9,7 @@ import {
   fetchManagerSquad,
   fetchPlayerMarketValue,
 } from "../kickbase/endpoints";
+import { meBudgetBalance } from "../kickbase/schemas";
 import { politeDelay } from "../kickbase/http";
 import { parseLeagueIds } from "../env";
 import { parseRanking } from "./ranking";
@@ -73,6 +74,8 @@ export interface LeagueIngestResult {
   market?: number;
   calibrationDelta?: number | null;
   error?: string;
+  /** /me/budget konnte nicht aktualisiert werden → exaktes Konto bleibt stale. */
+  budgetError?: string;
   /** Stille Pro-Manager-Fehler (squad/dashboard/transfer), max. 5. */
   warnings?: string[];
 }
@@ -296,7 +299,13 @@ async function collectUserBudget(
   day: number,
 ): Promise<void> {
   const budget = await fetchMeBudget(leagueId, { token });
-  await upsertUserBudget(userId, leagueId, day, budget.b);
+  const balance = meBudgetBalance(budget);
+  // Kein Kontostand-Feld gefunden → NICHT den letzten guten Wert mit null
+  // überschreiben; laut werfen, damit der Ausfall sichtbar wird.
+  if (balance == null) {
+    throw new Error(`/me/budget ohne Kontostand-Feld (Keys: ${Object.keys(budget).join(", ")})`);
+  }
+  await upsertUserBudget(userId, leagueId, day, balance);
 }
 
 // ---------- Multi-User-Einstieg ----------
@@ -426,8 +435,10 @@ export async function runCollectForUser(
     if (r.day != null) {
       try {
         await collectUserBudget(userId, l.leagueId, token, r.day);
-      } catch {
-        // isolieren
+      } catch (e) {
+        // Exaktes Konto konnte nicht aktualisiert werden — sichtbar machen,
+        // statt stillschweigend den alten Wert stehen zu lassen.
+        r.budgetError = (e as Error).message;
       }
     }
     results.push(r);
@@ -509,7 +520,8 @@ async function legacyOwnCalibration(
   if (day == null) return;
   const { startBudget, trackingSince } = await getLeagueMoneyBasis(leagueId);
   const budget = await fetchMeBudget(leagueId, { token });
-  const myActual = budget.b;
+  const myActual = meBudgetBalance(budget);
+  if (myActual == null) return;
 
   const tr = await fetchAllTransfers(leagueId, ownId, { token, since: trackingSince });
   const ownTransfers: TransferRow[] = parseTransfers(tr, leagueId, ownId);

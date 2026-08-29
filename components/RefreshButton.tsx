@@ -32,14 +32,22 @@ export default function RefreshButton({ leagueId }: { leagueId?: string }) {
       const data = (await res.json()) as {
         ok?: boolean;
         error?: string;
-        leagues?: { managers?: number; transfers?: number; market?: number; error?: string }[];
+        leagues?: {
+          managers?: number;
+          transfers?: number;
+          market?: number;
+          error?: string;
+          budgetError?: string;
+        }[];
       };
       if (!res.ok || !data.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
       const l = data.leagues?.[0];
       if (l?.error) throw new Error(l.error);
-      setStatus("done");
+      setStatus(l?.budgetError ? "error" : "done");
       setMessage(
-        `Fertig: ${l?.managers ?? 0} Manager, ${l?.transfers ?? 0} Transfers, ${l?.market ?? 0} am Markt.`,
+        l?.budgetError
+          ? `Daten aktualisiert, aber exakter Kontostand NICHT (${l.budgetError}). Der angezeigte Konto-Wert ist von vorher.`
+          : `Fertig: ${l?.managers ?? 0} Manager, ${l?.transfers ?? 0} Transfers, ${l?.market ?? 0} am Markt.`,
       );
       router.refresh();
     } catch (e) {

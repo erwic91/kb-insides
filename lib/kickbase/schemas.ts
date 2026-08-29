@@ -52,10 +52,25 @@ export type Overview = z.infer<typeof OverviewSchema>;
 /** Antwort von `/v4/leagues/{lid}/me/budget` — exakter eigener Kontostand. */
 export const MeBudgetSchema = z
   .object({
-    b: z.number(), // Kontostand in ganzen Euro
+    b: z.coerce.number().nullish(), // Kontostand (Kickbase kann das Feld umbenennen)
   })
   .passthrough();
 export type MeBudget = z.infer<typeof MeBudgetSchema>;
+
+/**
+ * Extrahiert den Kontostand defensiv aus der /me/budget-Antwort. Kickbase hat
+ * das Feld schon umbenannt; daher mehrere Kandidaten. null, wenn keiner passt —
+ * dann NICHT den letzten guten Wert überschreiben.
+ */
+const ME_BUDGET_KEYS = ["b", "budget", "bud", "bgt", "blc", "bal", "balance", "cash", "c"];
+export function meBudgetBalance(raw: MeBudget): number | null {
+  const rec = raw as Record<string, unknown>;
+  for (const k of ME_BUDGET_KEYS) {
+    const v = rec[k];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+  }
+  return null;
+}
 
 /**
  * Antwort von `/v4/leagues/{lid}/managers/{mid}/dashboard`.

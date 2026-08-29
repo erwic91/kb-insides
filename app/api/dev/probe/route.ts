@@ -172,6 +172,15 @@ export async function GET(request: Request) {
       await politeDelay();
     }
 
+    // H) /me/budget roh — welches Feld trägt den Kontostand? (Stale-Konto-Bug)
+    try {
+      const raw = (await kbFetch<Record<string, unknown>>(`/v4/leagues/${leagueId}/me/budget`, { token })) ?? {};
+      report.H_meBudget = { keys: Object.keys(raw), raw };
+    } catch (e) {
+      report.H_meBudget = { error: (e as Error).message };
+    }
+    await politeDelay();
+
     // G) Aktivitätsfeed — Kandidaten-Endpunkte + Event-Typen (für echte
     //    Login-Boni, Strafen und Marktauftritte).
     {
