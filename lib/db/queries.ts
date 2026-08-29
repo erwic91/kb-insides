@@ -1875,6 +1875,127 @@ export interface CalibrationRow {
   delta: number | null;
 }
 
+// ---------- Analytics ----------
+
+export interface ManagerSeriesPoint {
+  date: string;
+  teamValue: number | null;
+  cash: number | null;
+  points: number | null;
+}
+export interface ManagerSeries {
+  managers: { id: string; name: string; isMe: boolean }[];
+  byManager: Record<string, ManagerSeriesPoint[]>;
+}
+
+/**
+ * Tägliche Zeitreihen je Manager (Kaderwert, rekonstruiertes Konto, Punkte) aus
+ * manager_tv_daily — Basis für die Verlaufs-Liniendiagramme. Ausgeblendete
+ * Manager werden entfernt.
+ */
+export async function getManagerSeries(league: LeagueLite): Promise<ManagerSeries> {
+  const empty: ManagerSeries = { managers: [], byManager: {} };
+  const supabase = await getReadClient();
+  if (!supabase) return empty;
+  const [tv, myAccess, hidden] = await Promise.all([
+    supabase
+      .from("manager_tv_daily")
+      .select("manager_id, snap_date, team_value, cash, points")
+      .eq("league_id", league.id)
+      .order("snap_date", { ascending: true }),
+    getMyAccess(),
+    getHiddenManagerIds(league.id),
+  ]);
+  const rows = tv.data ?? [];
+  if (rows.length === 0) return empty;
+
+  const byManager: Record<string, ManagerSeriesPoint[]> = {};
+  const ids = new Set<string>();
+  for (const r of rows) {
+    const mid = r.manager_id as string;
+    if (hidden.has(mid)) continue;
+    ids.add(mid);
+    (byManager[mid] ??= []).push({
+      date: r.snap_date as string,
+      teamValue: (r.team_value as number) ?? null,
+      cash: (r.cash as number) ?? null,
+      points: (r.points as number) ?? null,
+    });
+  }
+  const { data: mgrs } = await supabase
+    .from("managers")
+    .select("id, name")
+    .eq("league_id", league.id)
+    .in("id", [...ids]);
+  const nameMap = new Map<string, string>();
+  for (const m of mgrs ?? []) nameMap.set(m.id as string, m.name as string);
+  const managers = [...ids]
+    .map((id) => ({ id, name: nameMap.get(id) ?? id, isMe: myAccess?.kbManagerId === id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { managers, byManager };
+}
+
+export interface OverpayByManagerRow {
+  managerId: string;
+  managerName: string;
+  /** Ø Overpay je bewertetem Kauf (Kaufpreis − Marktwert am Kauftag). */
+  avg: number;
+  total: number;
+  /** Bewertete Käufe (mit Marktwert-Basis). */
+  count: number;
+  /** Alle Käufe (auch ohne Basis) — für „bewertet X von Y". */
+  buysTotal: number;
+}
+
+/**
+ * Ø Overpay je Manager (wertgewichtet gleich je Kauf): gezahlter Aufpreis über
+ * dem Marktwert am Kauftag. Basis `transfers.mv_at_time`. Positiv = über MW.
+ */
+export async function getOverpayByManager(league: LeagueLite): Promise<OverpayByManagerRow[]> {
+  const supabase = await getReadClient();
+  if (!supabase) return [];
+  const { data } = await supabase
+    .from("transfers")
+    .select("to_manager, price, mv_at_time")
+    .eq("league_id", league.id)
+    .eq("direction", "buy");
+  const agg = new Map<string, { total: number; count: number; buys: number }>();
+  for (const r of data ?? []) {
+    const mid = r.to_manager as string | null;
+    if (!mid) continue;
+    const a = agg.get(mid) ?? { total: 0, count: 0, buys: 0 };
+    a.buys += 1;
+    const mv = r.mv_at_time as number | null;
+    if (mv != null && mv > 0) {
+      a.total += ((r.price as number) ?? 0) - mv;
+      a.count += 1;
+    }
+    agg.set(mid, a);
+  }
+  const ids = [...agg.keys()];
+  if (ids.length === 0) return [];
+  const [{ data: mgrs }, hidden] = await Promise.all([
+    supabase.from("managers").select("id, name").eq("league_id", league.id).in("id", ids),
+    getHiddenManagerIds(league.id),
+  ]);
+  const nameMap = new Map<string, string>();
+  for (const m of mgrs ?? []) nameMap.set(m.id as string, m.name as string);
+  return ids
+    .filter((id) => !hidden.has(id))
+    .map((id) => {
+      const a = agg.get(id)!;
+      return {
+        managerId: id,
+        managerName: nameMap.get(id) ?? id,
+        avg: a.count > 0 ? Math.round(a.total / a.count) : 0,
+        total: a.total,
+        count: a.count,
+        buysTotal: a.buys,
+      };
+    })
+    .sort((a, b) => b.avg - a.avg);
+}
+
 export interface CalibrationLive {
   /** Rekonstruierter Kontostand des eigenen Managers (Formel). */
   reconstructed: number | null;

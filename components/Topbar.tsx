@@ -10,6 +10,7 @@ const NAV = [
   { href: "/", label: "Dashboard" },
   { href: "/liga", label: "Liga" },
   { href: "/markt", label: "Marktradar" },
+  { href: "/analytics", label: "Analytics" },
   { href: "/news", label: "News" },
 ];
 

@@ -1873,3 +1873,80 @@ code {
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* Analytics: Charts */
+.chart-scroll {
+  overflow-x: auto;
+}
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+  margin-top: 4px;
+}
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--mute);
+  border-radius: 999px;
+  padding: 3px 10px 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.legend-chip.on {
+  font-weight: 600;
+}
+.legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.barh {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.barh-row {
+  display: grid;
+  grid-template-columns: 190px 1fr 110px;
+  align-items: center;
+  gap: 10px;
+}
+.barh-label {
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.barh-track {
+  height: 14px;
+  background: var(--chalk);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.barh-fill {
+  height: 100%;
+  border-radius: 4px;
+  min-width: 2px;
+}
+.barh-val {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+@media (max-width: 560px) {
+  .barh-row { grid-template-columns: 120px 1fr 92px; gap: 7px; }
+}
