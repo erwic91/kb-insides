@@ -98,6 +98,31 @@ async function getReadClient() {
   }
 }
 
+/**
+ * PostgREST begrenzt unbeschränkte `select()`-Abfragen standardmäßig auf 1000
+ * Zeilen. Ligagroße Tabellen (transfers, manager_tv_daily) sprengen das über
+ * eine Saison und würden sonst STILL abgeschnitten — z. B. wären ab dem 1001.
+ * Transfer die Konto-Rekonstruktionen aller Manager schlicht falsch. Dieser
+ * Helper blättert per `.range()` durch alle Seiten.
+ *
+ * WICHTIG: Die übergebene Query MUSS stabil und EINDEUTIG sortiert sein (mit
+ * einem eindeutigen Tiebreaker wie `id`), sonst können Seitengrenzen bei
+ * gleichen Sortierwerten Zeilen überspringen oder doppeln.
+ */
+const PAGE_SIZE = 1000;
+async function fetchAllRows<T>(
+  makeQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await makeQuery(from, from + PAGE_SIZE - 1);
+    if (error || !data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE_SIZE) break;
+  }
+  return all;
+}
+
 /** Eigener Liga-Zugang des Nutzers (RLS liefert nur die eigene Zeile). */
 export interface MyAccess {
   leagueId: string;
@@ -147,12 +172,16 @@ async function getTeamValueDeltas(leagueId: string): Promise<Map<string, number>
   const supabase = await getReadClient();
   const out = new Map<string, number>();
   if (!supabase) return out;
-  const { data } = await supabase
-    .from("manager_tv_daily")
-    .select("manager_id, snap_date, team_value")
-    .eq("league_id", leagueId)
-    .order("snap_date", { ascending: false });
-  if (!data || data.length === 0) return out;
+  const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+    supabase
+      .from("manager_tv_daily")
+      .select("manager_id, snap_date, team_value")
+      .eq("league_id", leagueId)
+      .order("snap_date", { ascending: false })
+      .order("manager_id", { ascending: true })
+      .range(from, to),
+  );
+  if (data.length === 0) return out;
 
   // Je Manager die zwei jüngsten Werte (Daten sind absteigend sortiert).
   const byMgr = new Map<string, { date: string; tv: number }[]>();
@@ -189,13 +218,16 @@ async function getPrevManagerMetrics(leagueId: string): Promise<Map<string, Prev
   const out = new Map<string, PrevMetric>();
   if (!supabase) return out;
   const today = new Date().toISOString().slice(0, 10);
-  const { data } = await supabase
-    .from("manager_tv_daily")
-    .select("manager_id, snap_date, team_value, cash, points")
-    .eq("league_id", leagueId)
-    .lt("snap_date", today)
-    .order("snap_date", { ascending: false });
-  if (!data) return out;
+  const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+    supabase
+      .from("manager_tv_daily")
+      .select("manager_id, snap_date, team_value, cash, points")
+      .eq("league_id", leagueId)
+      .lt("snap_date", today)
+      .order("snap_date", { ascending: false })
+      .order("manager_id", { ascending: true })
+      .range(from, to),
+  );
   // Daten absteigend → je Manager der erste (jüngste) Treffer vor heute.
   for (const r of data) {
     const mid = r.manager_id as string;
@@ -361,11 +393,18 @@ async function getTransfersByManager(
   const supabase = await getReadClient();
   const byManager = new Map<string, TransferLite[]>();
   if (!supabase) return byManager;
-  const { data, error } = await supabase
-    .from("transfers")
-    .select("id, player_id, from_manager, to_manager, direction, price, ts, mv_at_time")
-    .eq("league_id", leagueId);
-  if (error || !data) return byManager;
+  // Alle Transfers paginiert laden (sonst kappt PostgREST bei 1000 Zeilen und
+  // die Konto-Rekonstruktion würde ab dem 1001. Ligatransfer verfälscht).
+  const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+    supabase
+      .from("transfers")
+      .select("id, player_id, from_manager, to_manager, direction, price, ts, mv_at_time")
+      .eq("league_id", leagueId)
+      .order("ts", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
+  if (data.length === 0) return byManager;
 
   // Spielernamen für alle referenzierten IDs auflösen (Fallback `#<id>`).
   const pids = [...new Set(data.map((r) => r.player_id as string))];
@@ -1345,15 +1384,19 @@ export async function getPanicBarometers(
   // Fenster füllen kann.
   const lookback = Math.max(...windows, PANIC_SERIES_DAYS + PANIC_SERIES_ROLL);
   const sinceIso = new Date(Date.now() - lookback * 86_400_000).toISOString();
-  const { data } = await supabase
-    .from("transfers")
-    .select("player_id, to_manager, price, mv_at_time, ts")
-    .eq("league_id", league.id)
-    .eq("direction", "buy")
-    .not("mv_at_time", "is", null)
-    .gte("ts", sinceIso)
-    .order("ts", { ascending: false });
-  const all = (data ?? [])
+  const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+    supabase
+      .from("transfers")
+      .select("id, player_id, to_manager, price, mv_at_time, ts")
+      .eq("league_id", league.id)
+      .eq("direction", "buy")
+      .not("mv_at_time", "is", null)
+      .gte("ts", sinceIso)
+      .order("ts", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
+  const all = data
     .filter((r) => ((r.mv_at_time as number) ?? 0) > 0)
     .map((r) => ({
       playerId: r.player_id as string,
@@ -1902,16 +1945,21 @@ export async function getManagerSeries(league: LeagueLite): Promise<ManagerSerie
   const empty: ManagerSeries = { managers: [], byManager: {} };
   const supabase = await getReadClient();
   if (!supabase) return empty;
-  const [tv, myAccess, hidden] = await Promise.all([
-    supabase
-      .from("manager_tv_daily")
-      .select("manager_id, snap_date, team_value, cash, points")
-      .eq("league_id", league.id)
-      .order("snap_date", { ascending: true }),
+  // manager_tv_daily wächst mit Managern × Tagen und überschreitet über eine
+  // Saison die 1000-Zeilen-Grenze → paginiert laden.
+  const [rows, myAccess, hidden] = await Promise.all([
+    fetchAllRows<Record<string, unknown>>((from, to) =>
+      supabase
+        .from("manager_tv_daily")
+        .select("manager_id, snap_date, team_value, cash, points")
+        .eq("league_id", league.id)
+        .order("snap_date", { ascending: true })
+        .order("manager_id", { ascending: true })
+        .range(from, to),
+    ),
     getMyAccess(),
     getHiddenManagerIds(league.id),
   ]);
-  const rows = tv.data ?? [];
   if (rows.length === 0) return empty;
 
   const byManager: Record<string, ManagerSeriesPoint[]> = {};
@@ -1959,13 +2007,18 @@ export interface OverpayByManagerRow {
 export async function getOverpayByManager(league: LeagueLite): Promise<OverpayByManagerRow[]> {
   const supabase = await getReadClient();
   if (!supabase) return [];
-  const { data } = await supabase
-    .from("transfers")
-    .select("to_manager, price, mv_at_time")
-    .eq("league_id", league.id)
-    .eq("direction", "buy");
+  // Paginiert: alle Käufe der Liga (>1000 über eine Saison) vollständig laden.
+  const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+    supabase
+      .from("transfers")
+      .select("id, to_manager, price, mv_at_time")
+      .eq("league_id", league.id)
+      .eq("direction", "buy")
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
   const agg = new Map<string, { total: number; count: number; buys: number }>();
-  for (const r of data ?? []) {
+  for (const r of data) {
     const mid = r.to_manager as string | null;
     if (!mid) continue;
     const a = agg.get(mid) ?? { total: 0, count: 0, buys: 0 };
