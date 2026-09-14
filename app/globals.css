@@ -1950,3 +1950,423 @@ code {
 @media (max-width: 560px) {
   .barh-row { grid-template-columns: 120px 1fr 92px; gap: 7px; }
 }
+
+/* =====================================================================
+   Mobile-Optimierung (UX-Überarbeitung)
+   - genau ein horizontal scrollbares Element pro Bereich (.table-wrap /
+     .chart-scroll); der Seitenkörper scrollt nie seitwärts
+   - Burger-Navigation, sticky Namensspalte in den Hauptlisten,
+     Sekundärtabellen als Cards, Bottom-Sheets für Detailansichten
+   ===================================================================== */
+
+/* Sicherheitsnetz gegen horizontales Scrollen. `clip` (nicht `hidden`) lässt
+   die sticky Topbar intakt und erzeugt keinen Scroll-Container. */
+body {
+  overflow-x: clip;
+}
+
+/* Sichtbarkeits-Utilities für die Card-/Tabellen-Umschaltung (Telefon). */
+.mobile-only {
+  display: none;
+}
+@media (max-width: 560px) {
+  .desktop-only {
+    display: none !important;
+  }
+  .mobile-only {
+    display: block;
+  }
+  ul.data-cards.mobile-only {
+    display: flex;
+  }
+}
+
+/* ---------- Burger-Navigation (≤940px) ---------- */
+.burger {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 38px;
+  height: 34px;
+  flex: none;
+  border: 1px solid #39414d;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+.burger span {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: #c7ccd2;
+}
+.nav-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(20, 24, 31, 0.5);
+  backdrop-filter: blur(2px);
+  display: flex;
+  justify-content: flex-end;
+}
+.nav-drawer {
+  width: min(300px, 86%);
+  height: 100%;
+  background: var(--paper);
+  box-shadow: -18px 0 50px rgba(20, 24, 31, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  animation: oc-slide 0.18s ease-out;
+}
+.nav-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.nav-drawer .brand {
+  color: var(--ink);
+}
+.nav-drawer-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--mute);
+  font-size: 14px;
+  cursor: pointer;
+  line-height: 1;
+}
+.nav-drawer-league {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.nav-drawer-league .lbl {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.nav-drawer-links {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+}
+.nav-drawer-links a {
+  padding: 12px;
+  border-radius: 8px;
+  font-family: var(--display);
+  font-variation-settings: "wght" 600;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+}
+.nav-drawer-links a.on {
+  background: color-mix(in srgb, var(--signal) 12%, var(--paper));
+  color: var(--signal);
+}
+.nav-drawer-links.secondary a {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--mute);
+}
+.nav-drawer-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 6px 16px;
+}
+
+@media (max-width: 940px) {
+  /* Inline-Navigation, Liga-Switch und Header-Zahnrad in den Burger-Drawer
+     verlagern; Topbar bleibt einzeilig (Marke links, Burger rechts). */
+  .topbar-in {
+    flex-wrap: nowrap;
+    height: auto;
+  }
+  .nav,
+  .topbar .lswitch,
+  .topbar-menu {
+    display: none;
+  }
+  .burger {
+    display: inline-flex;
+    margin-left: auto;
+  }
+}
+
+/* ---------- Sticky Namensspalte (Hauptlisten) ---------- */
+@media (max-width: 940px) {
+  .stick-name {
+    --stick-bg: var(--chalk);
+  }
+  .card .stick-name,
+  .card-pad .stick-name {
+    --stick-bg: var(--paper);
+  }
+
+  /* Manager-/Ranglisten-Tabellen: Rang (1) + Name (2) fixieren. */
+  .stick-name.mgr-stick table thead th:nth-child(1),
+  .stick-name.mgr-stick table tbody td:nth-child(1),
+  .stick-name.mgr-stick table thead th:nth-child(2),
+  .stick-name.mgr-stick table tbody td:nth-child(2) {
+    position: sticky;
+    background: var(--stick-bg);
+    z-index: 3;
+  }
+  .stick-name.mgr-stick table thead th:nth-child(1),
+  .stick-name.mgr-stick table tbody td:nth-child(1) {
+    left: 0;
+    width: 34px;
+    min-width: 34px;
+    max-width: 34px;
+    padding-left: 8px;
+    padding-right: 4px;
+  }
+  .stick-name.mgr-stick table thead th:nth-child(2),
+  .stick-name.mgr-stick table tbody td:nth-child(2) {
+    left: 34px;
+    box-shadow: inset -8px 0 8px -8px rgba(20, 24, 31, 0.22);
+  }
+  .stick-name.mgr-stick table.click tbody tr:hover td:nth-child(1),
+  .stick-name.mgr-stick table.click tbody tr:hover td:nth-child(2) {
+    background: #f6f7f5;
+  }
+  .stick-name.mgr-stick table tbody tr.row-sel td:nth-child(1),
+  .stick-name.mgr-stick table tbody tr.row-sel td:nth-child(2) {
+    background: color-mix(in srgb, var(--signal) 10%, var(--paper));
+  }
+
+  /* Kader-Tabelle: Pos-Spalte ausblenden, Checkbox (1) + Name (3) fixieren. */
+  .stick-name.squad-stick table thead th:nth-child(2),
+  .stick-name.squad-stick table tbody td:nth-child(2) {
+    display: none;
+  }
+  .stick-name.squad-stick table thead th:nth-child(1),
+  .stick-name.squad-stick table tbody td:nth-child(1),
+  .stick-name.squad-stick table thead th:nth-child(3),
+  .stick-name.squad-stick table tbody td:nth-child(3) {
+    position: sticky;
+    background: var(--stick-bg);
+    z-index: 3;
+  }
+  .stick-name.squad-stick table thead th:nth-child(1),
+  .stick-name.squad-stick table tbody td:nth-child(1) {
+    left: 0;
+    width: 30px;
+    min-width: 30px;
+    padding-left: 8px;
+    padding-right: 2px;
+  }
+  .stick-name.squad-stick table thead th:nth-child(3),
+  .stick-name.squad-stick table tbody td:nth-child(3) {
+    left: 30px;
+    box-shadow: inset -8px 0 8px -8px rgba(20, 24, 31, 0.22);
+  }
+  .stick-name.squad-stick table tbody tr.sel-on td:nth-child(1),
+  .stick-name.squad-stick table tbody tr.sel-on td:nth-child(3) {
+    background: color-mix(in srgb, var(--signal) 8%, var(--stick-bg));
+  }
+}
+
+/* Header-Aktionen (Einstellungen/Deadline/Aktualisieren) umbrechen, statt vom
+   Overflow-Guard beschnitten zu werden. */
+@media (max-width: 560px) {
+  .head-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+}
+
+/* Schrift in den Hauptlisten auf dem Telefon verkleinern. */
+@media (max-width: 560px) {
+  .stick-name table th {
+    font-size: 9px;
+  }
+  .stick-name table td {
+    font-size: 11.5px;
+  }
+  .stick-name table .nm {
+    font-size: 12.5px;
+  }
+}
+
+/* ---------- Sekundärtabellen als Cards (Telefon) ---------- */
+.data-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+.dc-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 12px 14px;
+}
+.dc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.dc-rank {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--mute);
+  min-width: 18px;
+  flex: none;
+}
+.dc-fav {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+  padding: 0;
+  flex: none;
+}
+.dc-title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--display);
+  font-variation-settings: "wght" 600;
+  font-weight: 600;
+  font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dc-tag {
+  flex: none;
+  font-size: 11px;
+  color: var(--mute);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.dc-kv {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.dc-kv.one {
+  grid-template-columns: 1fr;
+}
+.dc-kv > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.dc-k {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.dc-v {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dc-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+}
+
+/* ---------- Bottom-Sheet: Manager-Detail aus der Hauptliste (≤700px) ---------- */
+.mgr-sheet-backdrop,
+.mgr-sheet-handle {
+  display: none;
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(28px);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@media (max-width: 700px) {
+  .mgr-sheet-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(20, 24, 31, 0.5);
+    backdrop-filter: blur(2px);
+  }
+  .mgr-explorer-side {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1001;
+    width: 100%;
+    max-height: 88vh;
+    overflow-y: auto;
+    background: var(--chalk);
+    border-top: 1px solid var(--line);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -18px 50px rgba(20, 24, 31, 0.3);
+    animation: sheet-up 0.22s ease-out;
+  }
+  .mgr-sheet-handle {
+    display: block;
+    width: 40px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--line);
+    margin: 8px auto 2px;
+  }
+}
+
+/* ---------- Bottom-Sheet: Spielerkarte & generische Modals (≤560px) ---------- */
+@media (max-width: 560px) {
+  .pc-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .pc-panel {
+    max-width: 100%;
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+    max-height: 92vh;
+    overflow-y: auto;
+    padding: 20px 16px 24px;
+    animation: sheet-up 0.22s ease-out;
+  }
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal {
+    max-width: 100%;
+    border-radius: 12px 12px 0 0;
+    max-height: 92vh;
+    overflow-y: auto;
+    animation: sheet-up 0.22s ease-out;
+  }
+}

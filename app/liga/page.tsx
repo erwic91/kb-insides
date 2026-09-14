@@ -53,7 +53,7 @@ export default async function LigaPage({
           <h2>Rangliste</h2>
           <span className="note">{active.length} aktive Manager</span>
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap stick-name mgr-stick">
           <table className="data">
             <thead>
               <tr>
@@ -93,7 +93,8 @@ export default async function LigaPage({
             hier die besten Spieler der Liga (inkl. Besitzer).
           </div>
         ) : (
-          <div className="table-wrap">
+          <>
+          <div className="table-wrap desktop-only">
             <table className="data">
               <thead>
                 <tr>
@@ -127,6 +128,38 @@ export default async function LigaPage({
               </tbody>
             </table>
           </div>
+          <ul className="data-cards mobile-only">
+            {topPlayers.map((p, i) => (
+              <li key={p.playerId} className="dc-card">
+                <div className="dc-head">
+                  <span className="dc-rank">{i + 1}</span>
+                  <Link href={href(`/player/${p.playerId}`)} className="dc-title linklike">
+                    {p.name}
+                  </Link>
+                  <span className="dc-tag">{p.position ?? "—"}</span>
+                </div>
+                <div className="dc-kv">
+                  <div>
+                    <span className="dc-k">Punkte</span>
+                    <span className="dc-v">{num(p.points)}</span>
+                  </div>
+                  <div>
+                    <span className="dc-k">Ø</span>
+                    <span className="dc-v">{num(p.avgPoints)}</span>
+                  </div>
+                  <div>
+                    <span className="dc-k">Marktwert</span>
+                    <span className="dc-v" title={eurFull(p.marketValue)}>{eur(p.marketValue)}</span>
+                  </div>
+                </div>
+                <div className="dc-foot">
+                  <span className="muted">Besitzer</span>
+                  <Link href={href(`/manager/${p.ownerId}`)}>{p.ownerName}</Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+          </>
         )}
       </section>
     </main>

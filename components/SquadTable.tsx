@@ -91,7 +91,7 @@ export default function SquadTable({
           </button>
         </div>
       )}
-      <div className="table-wrap">
+      <div className="table-wrap stick-name squad-stick">
       <table className="data squad-sel">
         <thead>
           <tr>

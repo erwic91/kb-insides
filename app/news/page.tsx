@@ -57,7 +57,8 @@ export default async function NewsPage({
         {news.injuries.length === 0 ? (
           <div className="notice">Aktuell keine gemeldeten Ausfälle im Kaderbestand.</div>
         ) : (
-          <div className="table-wrap">
+          <>
+          <div className="table-wrap desktop-only">
             <table className="data">
               <thead>
                 <tr>
@@ -90,6 +91,36 @@ export default async function NewsPage({
               </tbody>
             </table>
           </div>
+          <ul className="data-cards mobile-only">
+            {news.injuries.map((p) => (
+              <li key={`${p.managerId}-${p.playerId}`} className="dc-card">
+                <div className="dc-head">
+                  <Link href={href(`/player/${p.playerId}`)} className="dc-title linklike">
+                    {p.name}
+                  </Link>
+                  <span className="dc-tag">{p.position ?? "—"}</span>
+                </div>
+                <div className="dc-kv">
+                  <div>
+                    <span className="dc-k">Team</span>
+                    <span className="dc-v">{p.team ?? "—"}</span>
+                  </div>
+                  <div>
+                    <span className="dc-k">Status</span>
+                    <span className="dc-v" style={{ color: "var(--warn)" }}>{p.label}</span>
+                  </div>
+                  <div>
+                    <span className="dc-k">Manager</span>
+                    <span className="dc-v">
+                      <Link href={href(`/manager/${p.managerId}`)}>{p.managerName}</Link>
+                      {p.isMine && <span className="tag">du</span>}
+                    </span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          </>
         )}
       </div>
 
@@ -106,7 +137,8 @@ export default async function NewsPage({
             Sammel-Lauf.
           </div>
         ) : (
-          <div className="table-wrap">
+          <>
+          <div className="table-wrap desktop-only">
             <table className="data">
               <thead>
                 <tr>
@@ -138,6 +170,36 @@ export default async function NewsPage({
               </tbody>
             </table>
           </div>
+          <ul className="data-cards mobile-only">
+            {news.externalInjuries.map((x, i) => (
+              <li key={`${x.playerName}-${i}`} className="dc-card">
+                <div className="dc-head">
+                  {x.kbPlayerId ? (
+                    <Link href={href(`/player/${x.kbPlayerId}`)} className="dc-title linklike">
+                      {x.playerName}
+                    </Link>
+                  ) : (
+                    <span className="dc-title">{x.playerName}</span>
+                  )}
+                </div>
+                <div className="dc-kv">
+                  <div>
+                    <span className="dc-k">Team</span>
+                    <span className="dc-v">{x.teamName ?? "—"}</span>
+                  </div>
+                  <div>
+                    <span className="dc-k">Grund</span>
+                    <span className="dc-v" style={{ color: "var(--warn)" }}>{x.reason ?? "—"}</span>
+                  </div>
+                  <div>
+                    <span className="dc-k">Status</span>
+                    <span className="dc-v">{x.type ?? "—"}</span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          </>
         )}
       </div>
 

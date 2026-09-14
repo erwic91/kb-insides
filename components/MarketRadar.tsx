@@ -118,7 +118,7 @@ export default function MarketRadar({
         </p>
       </div>
 
-      <div className="table-wrap">
+      <div className="table-wrap desktop-only">
         <table className="data">
           <thead>
             <tr>
@@ -186,6 +186,69 @@ export default function MarketRadar({
           </tbody>
         </table>
       </div>
+
+      {/* Kartenansicht (nur Telefon) — dieselben Daten ohne Seitwärts-Scroll. */}
+      <ul className="data-cards mobile-only">
+        {rows.map((l) => {
+          const cmp = priceVsMv(l.price, l.marketValue);
+          const isFav = favs.has(l.playerId);
+          const tip = showBids ? bidTip(advice[l.playerId]) : null;
+          return (
+            <li key={l.playerId} className="dc-card">
+              <div className="dc-head">
+                <button
+                  onClick={() => toggle(l.playerId)}
+                  className="dc-fav"
+                  aria-label={isFav ? "Favorit entfernen" : "Als Favorit merken"}
+                  style={{ color: isFav ? "var(--warn)" : "var(--mute)" }}
+                >
+                  {isFav ? "★" : "☆"}
+                </button>
+                <Link
+                  href={`/player/${l.playerId}?league=${encodeURIComponent(leagueId)}`}
+                  className="dc-title linklike"
+                >
+                  {l.playerName}
+                </Link>
+                <span className="dc-tag">{l.position ?? "—"}</span>
+              </div>
+              <div className="dc-kv">
+                <div>
+                  <span className="dc-k">Marktwert</span>
+                  <span className="dc-v" title={eurFull(l.marketValue)}>{eur(l.marketValue)}</span>
+                </div>
+                <div>
+                  <span className="dc-k">Preis</span>
+                  <span className="dc-v" title={eurFull(l.price)}>{eur(l.price)}</span>
+                </div>
+                <div>
+                  <span className="dc-k">vs. MV</span>
+                  <span className={`dc-v ${cmp.cls}`}>{cmp.text}</span>
+                </div>
+              </div>
+              {tip && (
+                <div className="dc-kv one">
+                  <div>
+                    <span className="dc-k">Gebots-Tipp</span>
+                    <span className={`dc-v ${tip.cls}`} title={tip.title}>{tip.text}</span>
+                  </div>
+                </div>
+              )}
+              <div className="dc-foot">
+                <span>{l.offeredByName ?? "Kickbase"}</span>
+                <span className="muted">Läuft ab {date(l.expiry)}</span>
+              </div>
+            </li>
+          );
+        })}
+        {rows.length === 0 && (
+          <li className="muted" style={{ padding: 8 }}>
+            {onlyFavs
+              ? "Keine Favoriten am Markt."
+              : "Aktuell niemand am Markt (oder Collector noch nicht gelaufen)."}
+          </li>
+        )}
+      </ul>
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ManagerTable from "./ManagerTable";
 import ManagerPanel from "./ManagerPanel";
 import { loadManagerPanel, type ManagerPanelData } from "../app/manager/panelAction";
@@ -43,6 +43,20 @@ export default function ManagerExplorer(props: {
 
   const selRow = selectedId ? props.rows.find((r) => r.id === selectedId) ?? null : null;
 
+  // Auf dem Telefon erscheint das Detail als Bottom-Sheet (Overlay): dann den
+  // Body-Scroll sperren, solange ein Manager aktiv ist. Desktop = Split-View,
+  // kein Lock.
+  useEffect(() => {
+    if (!selectedId) return;
+    const mq = window.matchMedia("(max-width: 700px)");
+    if (!mq.matches) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [selectedId]);
+
   return (
     <div className={`mgr-explorer ${selectedId ? "open" : ""}`}>
       <div className="mgr-explorer-main">
@@ -58,15 +72,24 @@ export default function ManagerExplorer(props: {
         />
       </div>
       {selectedId && (
-        <aside className="mgr-explorer-side">
-          <ManagerPanel
-            row={selRow}
-            data={data}
-            loading={loading}
-            leagueId={props.leagueId}
-            onClose={() => setSelectedId(null)}
+        <>
+          {/* Backdrop nur auf Mobile sichtbar (CSS) — schließt das Bottom-Sheet. */}
+          <div
+            className="mgr-sheet-backdrop"
+            onMouseDown={() => setSelectedId(null)}
+            aria-hidden="true"
           />
-        </aside>
+          <aside className="mgr-explorer-side">
+            <div className="mgr-sheet-handle" aria-hidden="true" />
+            <ManagerPanel
+              row={selRow}
+              data={data}
+              loading={loading}
+              leagueId={props.leagueId}
+              onClose={() => setSelectedId(null)}
+            />
+          </aside>
+        </>
       )}
     </div>
   );

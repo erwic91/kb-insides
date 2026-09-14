@@ -111,7 +111,7 @@ export default function KaderwertChart({ data }: { data: ManagerSeries }) {
       ) : (
         <>
           <div className="chart-scroll">
-            <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img" aria-label="Verlauf">
+            <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" role="img" aria-label="Verlauf" style={{ minWidth: 560, display: "block" }}>
               <line x1={PL} y1={H - PB} x2={W - PR} y2={H - PB} stroke="var(--line)" strokeWidth={1} />
               {/* unselektierte grau */}
               {data.managers.filter((m) => !sel.has(m.id)).map((m) => (

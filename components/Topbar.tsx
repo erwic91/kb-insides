@@ -46,6 +46,26 @@ export default function Topbar({
     return () => document.removeEventListener("mousedown", onClick);
   }, [menuOpen]);
 
+  // Mobile-Navigations-Drawer (Burger). Schließt bei Routenwechsel, Esc und
+  // sperrt den Body-Scroll, solange offen.
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => {
+    setNavOpen(false);
+  }, [pathname]);
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNavOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [navOpen]);
+
   // Ohne zugängliche Liga (nicht angemeldet / noch nicht verbunden) nur die Marke
   // zeigen — Login-/Verbinden-Seiten brauchen keine Liga-Navigation.
   if (leagues.length === 0) {
@@ -121,7 +141,86 @@ export default function Topbar({
             </div>
           )}
         </div>
+
+        {/* Burger — nur auf Mobile sichtbar (CSS). Öffnet den Navigations-Drawer. */}
+        <button
+          type="button"
+          className="burger"
+          aria-label="Menü"
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen(true)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
       </div>
+
+      {navOpen && (
+        <div
+          className="nav-drawer-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setNavOpen(false);
+          }}
+        >
+          <div className="nav-drawer" role="dialog" aria-modal="true" aria-label="Navigation">
+            <div className="nav-drawer-head">
+              <span className="brand">
+                Liga<span>monitor</span>
+              </span>
+              <button
+                type="button"
+                className="nav-drawer-close"
+                aria-label="Schließen"
+                onClick={() => setNavOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="nav-drawer-league">
+              <span className="lbl">Liga</span>
+              <LeagueSwitch leagues={leagues} defaultId={league ?? undefined} />
+            </div>
+
+            <nav className="nav-drawer-links">
+              {NAV.map((n) => {
+                const active = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
+                return (
+                  <Link
+                    key={n.href}
+                    href={withLeague(n.href)}
+                    className={active ? "on" : ""}
+                    onClick={() => setNavOpen(false)}
+                  >
+                    {n.label}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <div className="nav-drawer-sep" />
+            <nav className="nav-drawer-links secondary">
+              <Link
+                href={withLeague("/connect")}
+                className={pathname.startsWith("/connect") ? "on" : ""}
+                onClick={() => setNavOpen(false)}
+              >
+                Verbindung
+              </Link>
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className={pathname.startsWith("/admin") ? "on" : ""}
+                  onClick={() => setNavOpen(false)}
+                >
+                  Admin
+                </Link>
+              )}
+            </nav>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

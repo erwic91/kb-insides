@@ -332,7 +332,7 @@ export default function ManagerTable({
           </div>
         </div>
       )}
-      <div className="table-wrap">
+      <div className="table-wrap stick-name mgr-stick">
       <table className="tbl click">
         <thead>
           <tr>
