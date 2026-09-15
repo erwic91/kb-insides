@@ -346,6 +346,63 @@ export async function upsertPlayerMvDaily(rows: PlayerMvDailyRow[]): Promise<voi
   if (error) throw new Error(`player_mv_daily upsert fehlgeschlagen: ${error.message}`);
 }
 
+/** Spieler-IDs im aktuellen Kaderbestand einer Liga (optional je Manager). */
+export async function getSquadPlayerIds(
+  leagueId: string,
+  managerId?: string,
+): Promise<string[]> {
+  const supabase = getServiceClient();
+  let q = supabase.from("squad_players").select("player_id").eq("league_id", leagueId);
+  if (managerId) q = q.eq("manager_id", managerId);
+  const { data } = await q;
+  return [...new Set((data ?? []).map((r) => r.player_id as string))];
+}
+
+/**
+ * Vorhandene player_mv_daily-Tage je Spieler seit `sinceIso` — Grundlage, um
+ * Lücken in der Tageshistorie (z. B. bei frisch geholten Spielern) zu finden.
+ */
+export async function getMvDailyDatesByPlayer(
+  leagueId: string,
+  playerIds: string[],
+  sinceIso: string,
+): Promise<Map<string, Set<string>>> {
+  const out = new Map<string, Set<string>>();
+  if (playerIds.length === 0) return out;
+  const supabase = getServiceClient();
+  // In Batches abfragen, damit `IN (...)` × Tage nicht die 1000-Zeilen-Grenze
+  // von PostgREST reißt (sonst würde Coverage fälschlich als lückenhaft gelesen).
+  const BATCH = 50;
+  for (let i = 0; i < playerIds.length; i += BATCH) {
+    const chunk = playerIds.slice(i, i + BATCH);
+    const { data } = await supabase
+      .from("player_mv_daily")
+      .select("player_id, snap_date")
+      .eq("league_id", leagueId)
+      .in("player_id", chunk)
+      .gte("snap_date", sinceIso);
+    for (const r of data ?? []) {
+      const pid = r.player_id as string;
+      const set = out.get(pid) ?? new Set<string>();
+      set.add(r.snap_date as string);
+      out.set(pid, set);
+    }
+  }
+  return out;
+}
+
+/** Kickbase-Manager-ID des Nutzers in einer Liga (league_access). */
+export async function getKbManagerId(userId: string, leagueId: string): Promise<string | null> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("league_access")
+    .select("kb_manager_id")
+    .eq("user_id", userId)
+    .eq("league_id", leagueId)
+    .maybeSingle();
+  return (data?.kb_manager_id as string) ?? null;
+}
+
 /** Kalibrierungszeile (eigene Rekonstruktion vs. /me/budget). */
 export async function upsertCalibration(row: {
   league_id: string;

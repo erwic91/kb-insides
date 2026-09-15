@@ -35,6 +35,9 @@ import {
   getBuyTransfersMissingMvLeague,
   getLatestTransferTsByManager,
   updateTransferMvAtTime,
+  getSquadPlayerIds,
+  getMvDailyDatesByPlayer,
+  getKbManagerId,
   type SquadPlayerRow,
   type PlayerMvDailyRow,
 } from "../db/ingest";
@@ -291,6 +294,75 @@ async function backfillOverpay(
   }
 }
 
+/**
+ * Füllt Lücken in player_mv_daily aus der echten Kickbase-Marktwert-Kurve.
+ * Hintergrund: player_mv_daily bekommt nur dann eine Zeile für einen Spieler,
+ * wenn er in der jeweiligen Nacht bereits im Kader war. Frisch geholte Spieler
+ * (z. B. gerade gekauft) haben deshalb Löcher in der Tageshistorie — und die
+ * „Entwicklung seit gestern" verglich dann zwei NICHT benachbarte Tage (ein
+ * Mehr-Tages-Sprung, der wie ein riesiger Tagesgewinn aussah).
+ *
+ * Wir prüfen je Spieler, ob die letzten `lookback` Tage lückenlos vorliegen; nur
+ * für Spieler MIT Lücke holen wir die 365-Tage-Kurve (ein Call je Spieler,
+ * gedeckelt per `cap`) und schreiben die jüngsten Tagespunkte nach. Im
+ * eingeschwungenen Zustand (keine neuen Käufe) sind es 0 Calls.
+ */
+async function backfillMvDailyGaps(
+  leagueId: string,
+  token: string,
+  playerIds: string[],
+  opts: { cap?: number; lookback?: number } = {},
+): Promise<number> {
+  const cap = opts.cap ?? 60;
+  const lookback = opts.lookback ?? 16;
+  const uniq = [...new Set(playerIds)];
+  if (uniq.length === 0) return 0;
+
+  // Erwartete Kalendertage (heute − 1 … heute − lookback): „heute" wird ggf.
+  // erst nachts geschrieben, daher ab gestern prüfen.
+  const today = Date.now();
+  const expected: string[] = [];
+  for (let k = 1; k <= lookback; k++) {
+    expected.push(new Date(today - k * EPOCH_DAY_MS).toISOString().slice(0, 10));
+  }
+  const sinceIso = expected[expected.length - 1]!;
+  const have = await getMvDailyDatesByPlayer(leagueId, uniq, sinceIso);
+
+  // Lücken-Kandidaten: irgendeiner der letzten 3 Tage fehlt (reicht, um „seit
+  // gestern"/„vorgestern" korrekt zu machen) — und wir haben überhaupt Daten.
+  const recent = expected.slice(0, 3);
+  const candidates = uniq.filter((pid) => {
+    const set = have.get(pid);
+    return recent.some((d) => !set?.has(d));
+  });
+  if (candidates.length === 0) return 0;
+
+  const rows: PlayerMvDailyRow[] = [];
+  for (const pid of candidates.slice(0, cap)) {
+    try {
+      const raw = await fetchPlayerMarketValue(leagueId, pid, "365", { token });
+      const pts = (raw.it ?? [])
+        .filter((p) => p.dt != null && p.mv != null)
+        .map((p) => ({ d: p.dt as number, mv: p.mv as number }))
+        .sort((a, b) => a.d - b.d)
+        .slice(-lookback);
+      for (const p of pts) {
+        rows.push({
+          league_id: leagueId,
+          player_id: pid,
+          snap_date: new Date(p.d * EPOCH_DAY_MS).toISOString().slice(0, 10),
+          market_value: p.mv,
+        });
+      }
+    } catch {
+      // einzelne Spieler dürfen scheitern (Rate-Limit o. Ä.).
+    }
+    await politeDelay();
+  }
+  if (rows.length > 0) await upsertPlayerMvDaily(rows);
+  return rows.length;
+}
+
 /** Nutzer-privater exakter Kontostand (/me/budget) → user_budget. */
 async function collectUserBudget(
   userId: string,
@@ -350,12 +422,18 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     await politeDelay();
   }
 
-  // Overpay-Backfill EINMAL je Liga (liga-weit, nicht je Nutzer).
+  // Overpay-Backfill + Marktwert-Lücken-Backfill EINMAL je Liga (liga-weit).
   for (const [leagueId, token] of leagueToken) {
     try {
       await backfillOverpay(leagueId, token);
     } catch {
       // Overpay-Backfill best-effort.
+    }
+    try {
+      const pids = await getSquadPlayerIds(leagueId);
+      await backfillMvDailyGaps(leagueId, token, pids, { cap: 80, lookback: 16 });
+    } catch {
+      // MV-Lücken-Backfill best-effort.
     }
   }
 
@@ -440,6 +518,19 @@ export async function runCollectForUser(
         // statt stillschweigend den alten Wert stehen zu lassen.
         r.budgetError = (e as Error).message;
       }
+    }
+    // Marktwert-Tageshistorie des EIGENEN Kaders lückenlos machen (frisch geholte
+    // Spieler haben sonst Löcher → falsche „Entwicklung seit gestern"). Nur der
+    // eigene Kader (~15 Spieler) und nur bei echter Lücke → im Normalfall 0
+    // Zusatz-Calls, „Aktualisieren" bleibt schnell.
+    try {
+      const mgrId = await getKbManagerId(userId, l.leagueId);
+      if (mgrId) {
+        const pids = await getSquadPlayerIds(l.leagueId, mgrId);
+        await backfillMvDailyGaps(l.leagueId, token, pids, { cap: 25, lookback: 16 });
+      }
+    } catch {
+      // MV-Lücken-Backfill best-effort.
     }
     results.push(r);
     await politeDelay();

@@ -1020,7 +1020,8 @@ export async function getManagerSquad(
   // aus squad_players gegen den jüngsten Snapshot): der Live-Wert stammt aus
   // demselben Sammel-Lauf wie der jüngste Snapshot und wäre damit identisch →
   // ergäbe fälschlich „0 €".
-  const mvHist = new Map<string, number[]>(); // player_id → [s0, s1, s2] (neu→alt)
+  // player_id → jüngste Snapshots [{date, mv}] (neu→alt), bis zu 8 Tage.
+  const mvHist = new Map<string, { date: string; mv: number }[]>();
   if (pids.length > 0) {
     const { data: mvDaily } = await supabase
       .from("player_mv_daily")
@@ -1031,8 +1032,8 @@ export async function getManagerSquad(
     for (const r of mvDaily ?? []) {
       const pid = r.player_id as string;
       const arr = mvHist.get(pid) ?? [];
-      if (arr.length < 3) {
-        arr.push(r.market_value as number);
+      if (arr.length < 8) {
+        arr.push({ date: r.snap_date as string, mv: r.market_value as number });
         mvHist.set(pid, arr);
       }
     }
@@ -1059,16 +1060,34 @@ export async function getManagerSquad(
     if (mv != null) teamValue += mv;
     if (profit != null) totalProfit += profit;
 
-    // Marktwert-Tagesentwicklung aus den drei jüngsten Snapshots (neu→alt):
-    // seit gestern = s0 − s1, vorgestern = s1 − s2.
-    const hist = mvHist.get(pid);
-    const s0 = hist?.[0] ?? null;
-    const s1 = hist?.[1] ?? null;
-    const s2 = hist?.[2] ?? null;
-    const mvChangeDay = s0 != null && s1 != null ? s0 - s1 : null;
-    const mvChangeDayPct = mvChangeDay != null && s1 ? mvChangeDay / s1 : null;
-    const mvChangePrev = s1 != null && s2 != null ? s1 - s2 : null;
-    const mvChangePrevPct = mvChangePrev != null && s2 ? mvChangePrev / s2 : null;
+    // Marktwert-Tagesentwicklung: NUR echte Kalendertag-Nachbarn vergleichen.
+    // Der jüngste Snapshot (d0) ist der Anker; „seit gestern" = d0 − (d0−1 Tag),
+    // „vorgestern" = (d0−1) − (d0−2). Fehlt der Vortags-Snapshot (Spieler wurde
+    // z. B. erst kürzlich in den Kader geholt → Lücke in der Historie), bleibt der
+    // Wert leer, statt einen Mehr-Tages-Sprung fälschlich als „seit gestern"
+    // auszuweisen.
+    const hist = mvHist.get(pid) ?? [];
+    const mvOn = (iso: string): number | null => hist.find((e) => e.date === iso)?.mv ?? null;
+    let mvChangeDay: number | null = null;
+    let mvChangeDayPct: number | null = null;
+    let mvChangePrev: number | null = null;
+    let mvChangePrevPct: number | null = null;
+    if (hist.length > 0) {
+      const d0 = hist[0]!;
+      const base = Date.parse(d0.date + "T00:00:00Z");
+      const dayIso = (offset: number) =>
+        new Date(base - offset * 86_400_000).toISOString().slice(0, 10);
+      const v1 = mvOn(dayIso(1));
+      const v2 = mvOn(dayIso(2));
+      if (v1 != null) {
+        mvChangeDay = d0.mv - v1;
+        mvChangeDayPct = v1 ? mvChangeDay / v1 : null;
+      }
+      if (v1 != null && v2 != null) {
+        mvChangePrev = v1 - v2;
+        mvChangePrevPct = v2 ? mvChangePrev / v2 : null;
+      }
+    }
 
     return {
       playerId: pid,
