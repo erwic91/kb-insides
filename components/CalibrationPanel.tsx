@@ -3,21 +3,31 @@ import { eur, eurFull, eurSigned } from "../lib/format";
 import InfoDot from "./InfoDot";
 
 /**
- * Kalibrierung: berechneter vs. echter Kontostand des eigenen Managers. Steht
- * die Differenz auf 0 €, ist die Rekonstruktionsformel bewiesen — der einzige
- * harte Beleg, dass die Gegner-Zahlen stimmen. Server-Komponente.
+ * Kalibrierung: berechneter vs. echter Kontostand des eigenen Managers plus die
+ * Methode, mit der die Prämien für ALLE Manager bestimmt werden — exakt über
+ * Kickbases `prft` (gegen den echten Kontostand validiert) oder kalibriert über
+ * die aus dem Anker rückgerechnete €/Punkt-Rate. Server-Komponente.
  */
+const MODE_LABEL: Record<string, string> = {
+  "prft-full": "✓ exakt (Kickbase-Prämien)",
+  "prft-plusLogin": "✓ exakt (Kickbase-Prämien + Login)",
+  calibrated: "kalibriert (€/Punkt)",
+  estimate: "Schätzung",
+};
+
 export default function CalibrationPanel({ data }: { data: CalibrationLive }) {
+  const exact = data.mode === "prft-full" || data.mode === "prft-plusLogin";
   const ok = data.delta != null && Math.abs(data.delta) < 1000;
+  const good = exact || data.mode === "calibrated";
   return (
     <div className="panel">
       <div className="panel-head">
         <h3>
           Kalibrierung
-          <InfoDot text="Vergleich deines berechneten Kontostands (Formel) mit dem echten Wert aus Kickbase. Differenz 0 € = die Formel stimmt und gilt damit auch für alle Gegner. Bei einer Differenz nur für deinen eigenen Datensatz sichtbar — Fehler, die nur Gegner betreffen (fehlende Strafen etc.), bleiben unentdeckt." />
+          <InfoDot text="Vergleich deines berechneten Kontostands mit dem echten Wert aus Kickbase — und die Methode, mit der die Prämien (Login-Bonus + Preisgeld/Boni) für alle Manager bestimmt werden. »Exakt« = Kickbases eigener Prämienwert (prft) deckt sich mit deinem echten Konto und gilt damit für jeden Manager. »Kalibriert« = die Prämie-pro-Punkt-Rate wird aus deinem exakten Konto rückgerechnet und je Gegner mit seinen Punkten skaliert." />
         </h3>
-        <span className="count" style={{ color: ok ? "var(--gain)" : "var(--loss)" }}>
-          {ok ? "✓ Formel bestätigt" : "Differenz"}
+        <span className="count" style={{ color: good ? "var(--gain)" : "var(--warn)" }}>
+          {MODE_LABEL[data.mode ?? "estimate"] ?? "—"}
         </span>
       </div>
       <div style={{ padding: "14px 18px" }}>
@@ -35,17 +45,27 @@ export default function CalibrationPanel({ data }: { data: CalibrationLive }) {
             {eurSigned(data.delta)}
           </span>
         </div>
-        {ok ? (
-          <p className="note" style={{ marginTop: 10, color: "var(--mute)" }}>
-            ✓ Deckt sich mit dem echten Konto — die Formel gilt damit auch für alle Gegner.
-          </p>
-        ) : (
-          data.hints.map((h, i) => (
-            <p key={i} className="note" style={{ marginTop: 10, color: "var(--mute)" }}>
-              {h}
-            </p>
-          ))
+
+        {(data.impliedPrizes != null || data.ratePerPoint != null) && (
+          <div className="calib-row" style={{ marginTop: 8, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+            <span className="muted">
+              Prämien gesamt
+              <InfoDot text="Alles, was dein echtes Konto über die reinen Transfers hinaus erklärt (echt − Startbudget + Käufe − Verkäufe): Login-Bonus + Preisgeld/Boni. Das ist die Summe, die das Modell auf alle Manager verteilt." />
+            </span>
+            <span className="num" title={eurFull(data.impliedPrizes)}>
+              {eur(data.impliedPrizes)}
+              {data.mode === "calibrated" && data.ratePerPoint != null
+                ? ` · ≈ ${eur(Math.round(data.ratePerPoint))}/Pkt`
+                : ""}
+            </span>
+          </div>
         )}
+
+        {data.hints.map((h, i) => (
+          <p key={i} className="note" style={{ marginTop: 10, color: "var(--mute)" }}>
+            {h}
+          </p>
+        ))}
       </div>
     </div>
   );

@@ -1,7 +1,6 @@
 import { getServiceClient } from "../db/client";
 import { reconstructCash } from "../compute/reconstruct";
 import { loginBonusSinceReset } from "../compute/loginBonus";
-import { MATCHDAY_BONUS_PER_POINT } from "./matchdayBonus";
 import type { Direction } from "./transfers";
 
 /**
@@ -22,7 +21,6 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
     .maybeSingle();
   const startBudget = (lg?.start_budget as number) ?? 0;
   const trackingSince = (lg?.tracking_since as string | null) ?? null;
-  const gameMode = (lg?.game_mode as number | null) ?? null;
   const sinceMs = trackingSince ? Date.parse(trackingSince) : null;
 
   // Jüngster Spieltag → Kaderwert & Punkte je Manager.
@@ -37,18 +35,27 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
   if (day == null) return;
   const { data: snaps } = await supabase
     .from("manager_snapshots")
-    .select("manager_id, team_value, points")
+    .select("manager_id, team_value, points, prizes")
     .eq("league_id", leagueId)
     .eq("day", day);
   if (!snaps || snaps.length === 0) return;
 
-  // Transfers je Manager (owner = Käufer bei buy, sonst Verkäufer).
+  // Transfers je Manager (owner = Käufer bei buy, sonst Verkäufer). Paginiert —
+  // sonst kappt PostgREST bei 1000 Zeilen und die Rekonstruktion wird falsch.
   const byMgr = new Map<string, { direction: Direction; price: number; ts: string | null }[]>();
-  const { data: trs } = await supabase
-    .from("transfers")
-    .select("from_manager, to_manager, direction, price, ts")
-    .eq("league_id", leagueId);
-  for (const t of trs ?? []) {
+  const trs: Record<string, unknown>[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data: page } = await supabase
+      .from("transfers")
+      .select("from_manager, to_manager, direction, price, ts, id")
+      .eq("league_id", leagueId)
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (!page || page.length === 0) break;
+    trs.push(...page);
+    if (page.length < 1000) break;
+  }
+  for (const t of trs) {
     const direction = ((t.direction as Direction) ?? "buy") as Direction;
     const owner = direction === "buy" ? (t.to_manager as string | null) : (t.from_manager as string | null);
     if (!owner) continue;
@@ -63,13 +70,6 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
     const mid = a.manager_id as string;
     adjSum.set(mid, (adjSum.get(mid) ?? 0) + ((a.amount as number) ?? 0));
   }
-  const bonusPts = new Map<string, number>();
-  const { data: bonus } = await supabase
-    .from("manager_bonus_points")
-    .select("manager_id, points")
-    .eq("league_id", leagueId);
-  for (const b of bonus ?? []) bonusPts.set(b.manager_id as string, (b.points as number) ?? 0);
-
   const loginBonus = loginBonusSinceReset(trackingSince, Date.now());
   const snapDate = new Date().toISOString().slice(0, 10);
 
@@ -80,10 +80,12 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
     if (startBudget > 0) {
       const all = byMgr.get(mid) ?? [];
       const filtered = sinceMs != null ? all.filter((t) => t.ts != null && Date.parse(t.ts) >= sinceMs) : all;
-      const prizes =
-        loginBonus +
-        (adjSum.get(mid) ?? 0) +
-        (gameMode === 2 ? (bonusPts.get(mid) ?? 0) * MATCHDAY_BONUS_PER_POINT : 0);
+      // Prämien: exakt über Kickbases `prft` (falls erfasst), sonst Login-Bonus.
+      // Die feine Kalibrierung (prft-Offset / €-Punkt-Rate) passiert im Read-Layer
+      // gegen den eigenen exakten Anker; dieser manager-neutrale Snapshot nimmt
+      // den robusten Basiswert.
+      const prft = (s.prizes as number | null) ?? null;
+      const prizes = (prft != null ? prft : loginBonus) + (adjSum.get(mid) ?? 0);
       cash = reconstructCash(filtered, { startBudget, prizes });
     }
     return {

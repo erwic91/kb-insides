@@ -1,7 +1,7 @@
 import { createSupabaseServerClient } from "../supabase/server";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
+import { buildIncomeModel, type ManagerFin, type IncomeMode } from "../compute/income";
 import { loginBonusSinceReset } from "../compute/loginBonus";
-import { MATCHDAY_BONUS_PER_POINT } from "../ingest/matchdayBonus";
 import { getAdjustmentSums } from "./adjustments";
 import { computeBidAdvice, type BidAdvice } from "../compute/bidadvisor";
 import { START_BUDGET } from "../compute/constants";
@@ -306,23 +306,6 @@ async function getSquadMvGrowth(leagueId: string): Promise<Map<string, number>> 
   return out;
 }
 
-/**
- * Bestätigte Spieltags-Bonuspunkte je Manager (manager_bonus_points, wöchentlich
- * dienstags eingefroren). Grundlage für den Spieltagsbonus = Punkte × 1000 €.
- * Leere Map, solange noch kein Spieltag abgeschlossen ist.
- */
-async function getMatchdayBonusPoints(leagueId: string): Promise<Map<string, number>> {
-  const supabase = await getReadClient();
-  const out = new Map<string, number>();
-  if (!supabase) return out;
-  const { data } = await supabase
-    .from("manager_bonus_points")
-    .select("manager_id, points")
-    .eq("league_id", leagueId);
-  for (const r of data ?? []) out.set(r.manager_id as string, (r.points as number) ?? 0);
-  return out;
-}
-
 /** Eigener exakter Kontostand je Spieltag (aus user_budget; RLS = nur eigene). */
 async function getMyBudget(leagueId: string): Promise<Map<number, number>> {
   const supabase = await getReadClient();
@@ -438,6 +421,64 @@ async function getTransfersByManager(
   return byManager;
 }
 
+/** Exakter Anker des eigenen Managers für das Prämien-Modell (income.ts). */
+export interface OwnAnchor {
+  buys: number;
+  sells: number;
+  points: number | null;
+  prft: number | null;
+  actual: number;
+}
+
+/**
+ * Baut den Prämien-Anker des eigenen Managers: Käufe/Verkäufe (seit Tracking),
+ * Punkte, Kickbase-Prämie (`prft`) und der EXAKTE Kontostand aus /me/budget.
+ * Null, wenn kein eigener Manager/exakter Wert bekannt ist → dann greift die
+ * reine Schätzung. `transfers` kann durchgereicht werden, um Doppel-Ladungen zu
+ * vermeiden.
+ */
+async function getOwnAnchor(
+  league: LeagueLite,
+  opts: { transfers?: Map<string, TransferLite[]>; myAccess?: MyAccess | null } = {},
+): Promise<OwnAnchor | null> {
+  const supabase = await getReadClient();
+  if (!supabase) return null;
+  const myAccess = opts.myAccess ?? (await getMyAccess());
+  if (!myAccess) return null;
+  const mid = myAccess.kbManagerId;
+  const day = await getLatestDay(league.id);
+  if (day == null) return null;
+  const actual = (await getMyBudget(league.id)).get(day) ?? null;
+  if (actual == null) return null;
+
+  const { data: snap } = await supabase
+    .from("manager_snapshots")
+    .select("points, prizes")
+    .eq("league_id", league.id)
+    .eq("manager_id", mid)
+    .eq("day", day)
+    .maybeSingle();
+
+  const transfers = opts.transfers ?? (await getTransfersByManager(league.id));
+  const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
+  const mine = (transfers.get(mid) ?? []).filter(
+    (t) => sinceMs == null || (t.ts != null && Date.parse(t.ts) >= sinceMs),
+  );
+  let buys = 0;
+  let sells = 0;
+  for (const t of mine) {
+    if (t.direction === "buy") buys += t.price;
+    else sells += t.price;
+  }
+  return {
+    buys,
+    sells,
+    points: (snap?.points as number) ?? null,
+    prft: (snap?.prizes as number) ?? null,
+    actual,
+  };
+}
+
 export interface HiddenManagerLite {
   id: string;
   name: string;
@@ -460,7 +501,7 @@ export async function getManagerTable(
 
   const { data, error } = await supabase
     .from("manager_snapshots")
-    .select("manager_id, team_value, points, streak, squad_size, points_series")
+    .select("manager_id, team_value, points, streak, squad_size, points_series, prizes")
     .eq("league_id", league.id)
     .eq("day", day);
   if (error || !data) return { day, rows: [], hidden: [] };
@@ -479,20 +520,16 @@ export async function getManagerTable(
   const transfers = await getTransfersByManager(league.id);
   // „Ich" + exakter Kontostand kommen jetzt pro Nutzer aus league_access /
   // user_budget (nicht mehr aus managers.is_me / snapshots.cash_actual).
-  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds, bonusPoints, prevMetrics, mvGrowth] =
+  const [myAccess, myBudget, adjustments, tvDeltas, hiddenIds, prevMetrics, mvGrowth] =
     await Promise.all([
       getMyAccess(),
       getMyBudget(league.id),
       getAdjustmentSums(league.id),
       getTeamValueDeltas(league.id),
       getHiddenManagerIds(league.id),
-      getMatchdayBonusPoints(league.id),
       getPrevManagerMetrics(league.id),
       getSquadMvGrowth(league.id),
     ]);
-  // Spieltagsbonus (Punkte × 1000 €) nur im Manager-Modus (gameMode 2).
-  const bonusFor = (mid: string) =>
-    league.gameMode === 2 ? (bonusPoints.get(mid) ?? 0) * MATCHDAY_BONUS_PER_POINT : 0;
   const myCashActual = myBudget.get(day) ?? null;
   const now = Date.now();
   // Täglicher Login-Bonus als Tages-Summe ab Reset (10k → 100k/Tag), Annahme
@@ -502,6 +539,46 @@ export async function getManagerTable(
   // Ab Startzeitpunkt rechnen: Kontostand/Aktivität nur aus Transfers seit dem
   // Tracking-Start (start_budget ist die Budget-Basis genau zu diesem Zeitpunkt).
   const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
+
+  // Prämien-Modell: nutzt den eigenen exakten Kontostand als Anker, um die
+  // Prämien (Login + Preisgeld/Boni) für ALLE Manager herzuleiten — entweder
+  // exakt über Kickbases `prft` (validiert) oder kalibriert über die €/Punkt-Rate.
+  const finByMid = new Map<string, ManagerFin>();
+  for (const s of data) {
+    const mid = s.manager_id as string;
+    const allT = transfers.get(mid);
+    const myT =
+      sinceMs != null && allT ? allT.filter((t) => t.ts != null && Date.parse(t.ts) >= sinceMs) : allT ?? [];
+    let buys = 0;
+    let sells = 0;
+    for (const t of myT) {
+      if (t.direction === "buy") buys += t.price;
+      else sells += t.price;
+    }
+    finByMid.set(mid, {
+      buys,
+      sells,
+      points: (s.points as number) ?? null,
+      prft: (s.prizes as number) ?? null,
+      adjustment: adjustments.get(mid) ?? 0,
+    });
+  }
+  const ownMid = myAccess?.kbManagerId ?? null;
+  const ownFin = ownMid ? finByMid.get(ownMid) ?? null : null;
+  const income = buildIncomeModel({
+    startBudget: league.startBudget,
+    loginBonus,
+    anchor:
+      ownFin && myCashActual != null
+        ? {
+            buys: ownFin.buys,
+            sells: ownFin.sells,
+            points: ownFin.points,
+            prft: ownFin.prft,
+            actual: myCashActual,
+          }
+        : null,
+  });
 
   const rows: ManagerTableRow[] = data.map((s) => {
     const mid = s.manager_id as string;
@@ -533,11 +610,18 @@ export async function getManagerTable(
     // (user_budget, nutzer-privat), sonst Rekonstruktion aus Transfers (Näherung)
     // inkl. vollem Login-Bonus (Tages-Summe ab Reset, für alle Gegner gleich).
     const cashActual = isMe ? myCashActual : null;
+    const fin = finByMid.get(mid) ?? {
+      buys: 0,
+      sells: 0,
+      points: (s.points as number) ?? null,
+      prft: (s.prizes as number) ?? null,
+      adjustment: adjustments.get(mid) ?? 0,
+    };
     const reconstructed =
       league.startBudget > 0
         ? reconstructCash(myTransfers ?? [], {
             startBudget: league.startBudget,
-            prizes: loginBonus + (adjustments.get(mid) ?? 0) + bonusFor(mid),
+            prizes: income.prizesFor(fin),
           })
         : null;
     const cash = cashActual ?? reconstructed;
@@ -637,7 +721,7 @@ export async function getManagerDetail(
 
   const { data: snaps } = await supabase
     .from("manager_snapshots")
-    .select("day, team_value, points, streak, squad_size")
+    .select("day, team_value, points, streak, squad_size, prizes")
     .eq("league_id", league.id)
     .eq("manager_id", managerId)
     // Chronologisch nach ts (nicht nach Spieltagsnummer) — sonst gilt beim
@@ -650,6 +734,7 @@ export async function getManagerDetail(
     points: (s.points as number) ?? null,
     streak: (s.streak as number) ?? null,
     squadSize: (s.squad_size as number) ?? null,
+    prizes: (s.prizes as number) ?? null,
   }));
   const latest = history.length > 0 ? history[history.length - 1] : null;
 
@@ -664,19 +749,31 @@ export async function getManagerDetail(
     .filter((t) => sinceMs == null || (t.ts != null && Date.parse(t.ts) >= sinceMs))
     .sort((a, b) => (b.ts ?? "").localeCompare(a.ts ?? ""));
 
-  // Eigener Manager: exakter Kontostand aus /me/budget, sonst Rekonstruktion
-  // (inkl. Login-Bonus als Tages-Summe ab Reset + manuelle Korrekturen).
+  // Eigener Manager: exakter Kontostand aus /me/budget, sonst Rekonstruktion über
+  // das Prämien-Modell (exaktes `prft` wenn gegen den eigenen Anker validiert,
+  // sonst kalibrierte €/Punkt-Rate) + manuelle Korrekturen.
   const loginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
   const adjustment = (await getAdjustmentSums(league.id)).get(managerId) ?? 0;
-  const matchdayBonus =
-    league.gameMode === 2
-      ? ((await getMatchdayBonusPoints(league.id)).get(managerId) ?? 0) * MATCHDAY_BONUS_PER_POINT
-      : 0;
+  const anchor = await getOwnAnchor(league, { transfers: transfersByManager, myAccess });
+  const income = buildIncomeModel({ startBudget: league.startBudget, loginBonus, anchor });
+  let buysSince = 0;
+  let sellsSince = 0;
+  for (const t of transfers) {
+    if (t.direction === "buy") buysSince += t.price;
+    else sellsSince += t.price;
+  }
+  const finThis: ManagerFin = {
+    buys: buysSince,
+    sells: sellsSince,
+    points: latest?.points ?? null,
+    prft: latest?.prizes ?? null,
+    adjustment,
+  };
   const reconstructed =
     league.startBudget > 0
       ? reconstructCash(transfers, {
           startBudget: league.startBudget,
-          prizes: loginBonus + adjustment + matchdayBonus,
+          prizes: income.prizesFor(finThis),
         })
       : null;
   const cash = cashActual != null ? cashActual : reconstructed;
@@ -2074,64 +2171,92 @@ export async function getOverpayByManager(league: LeagueLite): Promise<OverpayBy
 }
 
 export interface CalibrationLive {
-  /** Rekonstruierter Kontostand des eigenen Managers (Formel). */
+  /** Rekonstruierter Kontostand des eigenen Managers (aktuelles Prämien-Modell). */
   reconstructed: number | null;
   /** Echter Kontostand aus Kickbase (/me/budget). */
   actual: number | null;
-  /** Differenz = berechnet − echt. 0 (bzw. < 1.000 €) = Formel bestätigt. */
+  /** Differenz = berechnet − echt. 0 (bzw. < 1.000 €) = Modell bestätigt. */
   delta: number | null;
+  /** Welche Methode die Prämien liefert (prft exakt / kalibriert / Schätzung). */
+  mode: IncomeMode | null;
+  /** Tatsächliche Gesamtprämie des eigenen Kontos (echt − Start + Käufe − Verkäufe). */
+  impliedPrizes: number | null;
+  /** Geschätzter Login-Bonus-Anteil. */
+  loginBonus: number | null;
+  /** Kalibrierte €/Punkt-Rate (nur im kalibrierten Fallback). */
+  ratePerPoint: number | null;
+  /** Kickbase-Prämie `prft` des eigenen Managers (falls erfasst). */
+  prft: number | null;
   /** Plausible Ursachen bei Differenz — bewusst ohne erfundene Genauigkeit. */
   hints: string[];
 }
 
 /**
  * Live-Kalibrierung: vergleicht für den EIGENEN Manager den rekonstruierten
- * Kontostand (Formel) mit dem echten Wert aus Kickbase. Steht die Differenz auf
- * 0 €, ist die Formel bewiesen — und gilt dann auch für alle Gegner. Null, wenn
- * kein eigener Manager/echter Wert bekannt ist.
+ * Kontostand (aktuelles Prämien-Modell) mit dem echten Wert aus Kickbase und
+ * legt offen, WIE die Prämien bestimmt werden — exakt über Kickbases `prft`
+ * (gegen den echten Kontostand validiert) oder über die aus dem Anker
+ * kalibrierte €/Punkt-Rate. Null, wenn kein eigener Manager/echter Wert bekannt.
  */
 export async function getCalibrationLive(league: LeagueLite): Promise<CalibrationLive | null> {
   const myAccess = await getMyAccess();
   if (!myAccess) return null;
   const mid = myAccess.kbManagerId;
-  const day = await getLatestDay(league.id);
-  if (day == null) return null;
 
-  const [myBudget, adjustments, bonusPoints, transfersByMgr] = await Promise.all([
-    getMyBudget(league.id),
-    getAdjustmentSums(league.id),
-    getMatchdayBonusPoints(league.id),
-    getTransfersByManager(league.id),
-  ]);
-  const actual = myBudget.get(day) ?? null;
-  if (actual == null) return null; // ohne echten Wert keine Kalibrierung
+  const transfersByMgr = await getTransfersByManager(league.id);
+  const anchor = await getOwnAnchor(league, { transfers: transfersByMgr, myAccess });
+  if (!anchor) return null; // ohne exakten Anker keine Kalibrierung
+
+  const loginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
+  const adjustment = (await getAdjustmentSums(league.id)).get(mid) ?? 0;
+  const income = buildIncomeModel({ startBudget: league.startBudget, loginBonus, anchor });
 
   const sinceMs = league.trackingSince ? Date.parse(league.trackingSince) : null;
-  const all = transfersByMgr.get(mid) ?? [];
-  const mine = sinceMs != null ? all.filter((t) => t.ts != null && Date.parse(t.ts) >= sinceMs) : all;
-  const loginBonus = loginBonusSinceReset(league.trackingSince, Date.now());
-  const matchdayBonus =
-    league.gameMode === 2 ? (bonusPoints.get(mid) ?? 0) * MATCHDAY_BONUS_PER_POINT : 0;
-  const prizes = loginBonus + (adjustments.get(mid) ?? 0) + matchdayBonus;
+  const mine = (transfersByMgr.get(mid) ?? []).filter(
+    (t) => sinceMs == null || (t.ts != null && Date.parse(t.ts) >= sinceMs),
+  );
+  const finOwn: ManagerFin = {
+    buys: anchor.buys,
+    sells: anchor.sells,
+    points: anchor.points,
+    prft: anchor.prft,
+    adjustment,
+  };
+  const actual = anchor.actual;
   const reconstructed =
     league.startBudget > 0
-      ? reconstructCash(mine, { startBudget: league.startBudget, prizes })
+      ? reconstructCash(mine, { startBudget: league.startBudget, prizes: income.prizesFor(finOwn) })
       : null;
   const delta = reconstructed != null ? reconstructed - actual : null;
 
   const hints: string[] = [];
-  if (delta != null && Math.abs(delta) >= 1000) {
-    if (delta > 0) {
-      hints.push(
-        "Berechnet zu hoch — mögliche Ursache: eine nicht erfasste Strafe (als Korrektur eintragen) oder zu viel angesetzter Login-Bonus.",
-      );
-    } else {
-      hints.push(
-        "Berechnet zu niedrig — mögliche Ursache: fehlende Verkäufe/Boni oder weniger Login-Bonus (nicht täglich eingeloggt?).",
-      );
-    }
+  if (income.mode === "calibrated") {
+    hints.push(
+      "Kalibriert am eigenen exakten Kontostand: die Prämie pro Punkt wird rückgerechnet und auf alle Gegner (skaliert mit ihren Punkten) angewandt. Exakt wird es, sobald Kickbases Prämienwert (prft) beim nächsten Abruf vorliegt und bestätigt ist.",
+    );
+  } else if (income.mode === "prft-full" || income.mode === "prft-plusLogin") {
+    hints.push("Exakt: Kickbases eigener Prämienwert (prft) stimmt mit dem echten Kontostand überein und gilt damit für alle Manager.");
+  } else if (income.mode === "estimate") {
+    hints.push("Noch keine Kalibrierung möglich — sobald ein exakter Kontostand vorliegt, wird das Modell daran geeicht.");
   }
-  return { reconstructed, actual, delta, hints };
+  if (delta != null && Math.abs(delta) >= 1000) {
+    hints.push(
+      delta > 0
+        ? "Rest-Differenz positiv — evtl. eine nicht erfasste Strafe (als Korrektur eintragen)."
+        : "Rest-Differenz negativ — evtl. fehlende Verkäufe/Boni in der Historie.",
+    );
+  }
+  return {
+    reconstructed,
+    actual,
+    delta,
+    mode: income.mode,
+    impliedPrizes: income.impliedPrizes,
+    loginBonus,
+    ratePerPoint: income.ratePerPoint,
+    prft: anchor.prft,
+    hints,
+  };
 }
 
 export async function getCalibration(league: LeagueLite): Promise<CalibrationRow | null> {

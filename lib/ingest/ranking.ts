@@ -30,6 +30,8 @@ export interface SnapshotRow {
   cash_actual: number | null;
   /** Punkte je Spieltag (Serie) aus ranking `us[].lp` — Formkurve. */
   points_series: (number | null)[] | null;
+  /** Kickbase-Prämie/Gewinn (`prft` aus dem Dashboard) — im Collector angereichert. */
+  prizes: number | null;
 }
 
 export interface RankingRows {
@@ -67,6 +69,7 @@ export function parseRanking(
     squad_size: null, // wird im Collector aus dem squad-Endpunkt angereichert
     cash_actual: null, // nur eigener Manager, aus /me/budget (Collector)
     points_series: u.lp ?? null, // Formkurve: Punkte je Spieltag
+    prizes: null, // aus dem Dashboard (prft) im Collector angereichert
   }));
 
   return {

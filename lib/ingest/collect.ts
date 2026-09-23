@@ -159,16 +159,18 @@ async function collectLeagueWide(
         }
         await politeDelay();
 
-        if (!hasTv(snap.team_value)) {
-          try {
-            const dash = await fetchManagerDashboard(leagueId, manager.id, { token });
-            if (hasTv(dash.tv ?? null)) snap.team_value = dash.tv ?? null;
-            snap.points = snap.points ?? dash.tp ?? null;
-          } catch (e) {
-            warn(`dashboard ${manager.id}: ${(e as Error).message}`);
-          }
-          await politeDelay();
+        // Dashboard IMMER abrufen: liefert die Kickbase-Prämie (`prft`) je
+        // Manager — Basis für die exakte Kontorekonstruktion ALLER Manager (nicht
+        // nur des eigenen /me/budget). Zusätzlich Fallback für Kaderwert/Punkte.
+        try {
+          const dash = await fetchManagerDashboard(leagueId, manager.id, { token });
+          if (dash.prft != null) snap.prizes = dash.prft;
+          if (!hasTv(snap.team_value) && hasTv(dash.tv ?? null)) snap.team_value = dash.tv ?? null;
+          snap.points = snap.points ?? dash.tp ?? null;
+        } catch (e) {
+          warn(`dashboard ${manager.id}: ${(e as Error).message}`);
         }
+        await politeDelay();
       }
 
       try {
