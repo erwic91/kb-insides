@@ -11,7 +11,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    // Alles außer Next-internen Pfaden und statischen Dateien.
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // Alles außer Next-internen Pfaden und statischen Dateien (inkl. Web-App-
+    // Manifest — iOS lädt es ohne Login; sonst würde es auf /login umgeleitet).
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)",
   ],
 };

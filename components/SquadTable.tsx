@@ -213,6 +213,7 @@ export default function SquadTable({
           </tr>
         </tfoot>
       </table>
+      </div>
 
       {sel.size > 0 && (
         <div className="sale-toast" role="status">
@@ -257,7 +258,6 @@ export default function SquadTable({
           </div>
         </div>
       )}
-      </div>
     </>
   );
 }

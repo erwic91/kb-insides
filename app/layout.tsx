@@ -31,11 +31,30 @@ const mono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "Ligamonitor",
   description: "Kickbase-Liga-Insights über die Mitmanager",
+  applicationName: "Ligamonitor",
+  // „Zum Home-Bildschirm" → startet als eigenständige App (ohne Safari-Leisten).
+  appleWebApp: {
+    capable: true,
+    title: "Ligamonitor",
+    statusBarStyle: "black-translucent",
+  },
+  // iOS verlinkt sonst lange Zahlen (z. B. 206.355.446) als Telefonnummern.
+  formatDetection: { telephone: false, date: false, address: false, email: false },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Inhalt bis in die Ränder (Notch/Home-Indikator) — Abstände via safe-area-inset.
+  viewportFit: "cover",
+  themeColor: "#14181f",
 };
 
 export default async function RootLayout({

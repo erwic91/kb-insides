@@ -704,11 +704,16 @@ code {
   outline: none;
 }
 .infodot-tip {
+  /* Versteckt = display:none: sonst zählt die (unsichtbare) Blase zum
+     Scrollbereich breiter Tabellen und man kann „ins Leere" wischen. */
+  display: none;
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
   width: max-content;
   max-width: 260px;
+  white-space: normal;
+  text-align: left;
   background: var(--ink);
   color: var(--chalk);
   padding: 8px 10px;
@@ -732,9 +737,40 @@ code {
   right: 0;
 }
 .infodot:hover .infodot-tip,
-.infodot:focus-visible .infodot-tip {
+.infodot:focus-visible .infodot-tip,
+.infodot.open .infodot-tip {
+  display: block;
   opacity: 1;
   visibility: visible;
+}
+/* Touch: Erklärung als Karte über der Tab-Bar (fixed → nicht vom
+   Tabellen-Scrollbereich abgeschnitten). */
+@media (hover: none) {
+  .infodot:hover:not(.open) .infodot-tip {
+    display: none;
+  }
+  .infodot.open .infodot-tip {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: calc(86px + env(safe-area-inset-bottom));
+    width: auto;
+    max-width: none;
+    z-index: 1300;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 14px 16px;
+    border-radius: 14px;
+    white-space: normal;
+    text-align: left;
+    box-shadow: 0 14px 40px rgba(20, 24, 31, 0.35);
+    animation: sheet-up 0.2s ease-out;
+  }
+  .infodot {
+    width: 20px;
+    height: 20px;
+  }
 }
 
 /* ---------- Dashboard-Einblicke ---------- */
@@ -872,56 +908,12 @@ code {
   .g-2,
   .tiles4,
   .grid-4 {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .hide-sm {
     display: none;
   }
 
-  /* Topbar zweizeilig: Marke + Liga-Switch oben, Navigation als scrollbare
-     Zeile darunter — statt die Navigation auf Mobile ganz auszublenden. */
-  .topbar-in {
-    flex-wrap: wrap;
-    height: auto;
-    padding: 10px 16px;
-    gap: 10px 14px;
-  }
-  .topbar-spacer {
-    display: none;
-  }
-  .brand {
-    order: 1;
-  }
-  .lswitch {
-    order: 2;
-    margin-left: auto;
-    min-width: 0;
-    max-width: 68%;
-  }
-  .seg {
-    overflow-x: auto;
-    max-width: 100%;
-    scrollbar-width: none;
-  }
-  .seg::-webkit-scrollbar {
-    display: none;
-  }
-  .nav {
-    order: 3;
-    width: 100%;
-    flex-basis: 100%;
-    overflow-x: auto;
-    gap: 2px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .nav::-webkit-scrollbar {
-    display: none;
-  }
-  .nav a {
-    white-space: nowrap;
-    padding: 7px 11px;
-  }
 }
 
 /* ---------- Telefon-Feinschliff ---------- */
@@ -1981,126 +1973,212 @@ body {
   }
 }
 
-/* ---------- Burger-Navigation (≤940px) ---------- */
-.burger {
+/* ---------- App-Shell: Top-Leiste, Tab-Bar, Bottom-Sheet (≤940px) ---------- */
+.league-pill,
+.tabbar {
   display: none;
-  flex-direction: column;
+}
+/* Dunkle Leiste läuft unter die Statusleiste (viewport-fit=cover / Home-Screen-App). */
+.topbar {
+  padding-top: env(safe-area-inset-top);
+}
+.league-pill {
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  width: 38px;
+  gap: 6px;
+  margin-left: auto;
+  max-width: 60%;
   height: 34px;
-  flex: none;
+  padding: 0 12px 0 14px;
   border: 1px solid #39414d;
-  border-radius: 3px;
-  background: none;
-  cursor: pointer;
-}
-.burger span {
-  display: block;
-  width: 18px;
-  height: 2px;
-  border-radius: 2px;
-  background: #c7ccd2;
-}
-.nav-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1200;
-  background: rgba(20, 24, 31, 0.5);
-  backdrop-filter: blur(2px);
-  display: flex;
-  justify-content: flex-end;
-}
-.nav-drawer {
-  width: min(300px, 86%);
-  height: 100%;
-  background: var(--paper);
-  box-shadow: -18px 0 50px rgba(20, 24, 31, 0.3);
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  animation: oc-slide 0.18s ease-out;
-}
-.nav-drawer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 18px;
-  border-bottom: 1px solid var(--line);
-}
-.nav-drawer .brand {
-  color: var(--ink);
-}
-.nav-drawer-close {
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper);
-  color: var(--mute);
-  font-size: 14px;
-  cursor: pointer;
-  line-height: 1;
-}
-.nav-drawer-league {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--line);
-}
-.nav-drawer-league .lbl {
-  font-family: var(--display);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--mute);
-}
-.nav-drawer-links {
-  display: flex;
-  flex-direction: column;
-  padding: 8px 10px;
-}
-.nav-drawer-links a {
-  padding: 12px;
-  border-radius: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--chalk);
   font-family: var(--display);
   font-variation-settings: "wght" 600;
   font-weight: 600;
-  font-size: 15px;
-  color: var(--ink);
-}
-.nav-drawer-links a.on {
-  background: color-mix(in srgb, var(--signal) 12%, var(--paper));
-  color: var(--signal);
-}
-.nav-drawer-links.secondary a {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--mute);
+  cursor: pointer;
 }
-.nav-drawer-sep {
-  height: 1px;
-  background: var(--line);
-  margin: 6px 16px;
+.league-pill:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+.league-pill-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.league-pill svg {
+  flex: none;
+  opacity: 0.8;
+}
+
+/* Tab-Bar im iOS-Stil: transluzent mit Blur, über dem Home-Indikator. */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  justify-content: space-around;
+  padding: 6px max(6px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom))
+    max(6px, env(safe-area-inset-left));
+  background: rgba(255, 255, 255, 0.86);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  backdrop-filter: saturate(180%) blur(18px);
+  border-top: 1px solid rgba(20, 24, 31, 0.08);
+}
+.tabbar a {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 0 2px;
+  color: #858b92;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+.tabbar a.on {
+  color: var(--signal);
+  font-weight: 600;
+}
+.tabbar a:active {
+  transform: scale(0.9);
+}
+
+/* Bottom-Sheet (Liga wählen / Einstellungen) — native Anmutung. */
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(20, 24, 31, 0.45);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  animation: fade-in 0.18s ease-out;
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.sheet {
+  background: var(--paper);
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 40px rgba(20, 24, 31, 0.25);
+  padding: 0 16px calc(18px + env(safe-area-inset-bottom));
+  max-height: 85vh;
+  max-height: 85dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: sheet-up 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.sheet-grabber {
+  width: 38px;
+  height: 5px;
+  border-radius: 999px;
+  background: #d0d4d0;
+  margin: 8px auto 4px;
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px 10px;
+}
+.sheet-title {
+  font-family: var(--display);
+  font-variation-settings: "wght" 700;
+  font-weight: 700;
+  font-size: 17px;
+}
+.sheet-done {
+  background: none;
+  border: none;
+  color: var(--signal);
+  font-weight: 600;
+  font-size: 16px;
+  padding: 8px 4px;
+  cursor: pointer;
+}
+.sheet-sub {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mute);
+  padding: 18px 6px 6px;
+}
+.sheet-list {
+  background: var(--chalk);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.sheet-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 50px;
+  padding: 12px 16px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  font: inherit;
+  font-size: 16px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.sheet-list > :last-child {
+  border-bottom: 0;
+}
+.sheet-item.on {
+  color: var(--signal);
+  font-weight: 600;
+}
+.sheet-item:active {
+  background: #e2e5e1;
+}
+.sheet-chev {
+  color: var(--mute);
+  font-size: 22px;
+  line-height: 1;
 }
 
 @media (max-width: 940px) {
-  /* Inline-Navigation, Liga-Switch und Header-Zahnrad in den Burger-Drawer
-     verlagern; Topbar bleibt einzeilig (Marke links, Burger rechts). */
   .topbar-in {
-    flex-wrap: nowrap;
-    height: auto;
+    height: 54px;
+    gap: 12px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
   }
   .nav,
+  .topbar-spacer,
   .topbar .lswitch,
   .topbar-menu {
     display: none;
   }
-  .burger {
+  .brand {
+    font-size: 15px;
+  }
+  .league-pill {
     display: inline-flex;
-    margin-left: auto;
+  }
+  .tabbar {
+    display: flex;
+  }
+  /* Platz für die Tab-Bar, damit nichts dahinter verschwindet. */
+  .wrap,
+  .page {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
   }
 }
 
@@ -2368,5 +2446,192 @@ body {
     max-height: 92vh;
     overflow-y: auto;
     animation: sheet-up 0.22s ease-out;
+  }
+}
+
+/* =====================================================================
+   iPhone/Safari: App-Gefühl & Overflow-Härtung
+   ===================================================================== */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+/* Kein 300-ms-Doppeltipp-Zoom auf Bedienelementen. */
+a,
+button,
+label,
+summary,
+[role="button"],
+.tbl.click tbody tr {
+  touch-action: manipulation;
+}
+
+/* Der body-Wert wird auf den Viewport übertragen und von iOS-Safari ignoriert —
+   daher zusätzlich direkt am Inhaltscontainer kappen (clip bricht kein sticky). */
+.wrap,
+.page {
+  overflow-x: clip;
+}
+
+/* Grid-Spuren dürfen nicht von breitem Inhalt (Tabellen, lange Zahlen)
+   aufgeblasen werden — sonst wird die Seite breiter als der Bildschirm. */
+.g-2 > *,
+.tiles4 > *,
+.grid-4 > *,
+.kr-grid > *,
+.pc-tiles > * {
+  min-width: 0;
+}
+
+@media (max-width: 1024px) {
+  /* URSACHE des Herauszoomens auf dem iPhone: in der Spalten-Anordnung ließ
+     align-items:flex-start die Manager-Tabelle auf ihre volle Inhaltsbreite
+     (~950 px) wachsen, statt im .table-wrap horizontal zu scrollen. */
+  .mgr-explorer {
+    align-items: stretch;
+  }
+  .mgr-explorer-main {
+    width: 100%;
+  }
+}
+
+@media (max-width: 940px) {
+  .table-wrap {
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  /* Beträge einzeilig („206.355.446 €" statt umbrochenem „€"). */
+  .table-wrap th,
+  .table-wrap td {
+    white-space: nowrap;
+  }
+  /* iOS zoomt bei Formularfeldern < 16 px beim Fokus hinein. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  /* Kompakter Seitenkopf. */
+  .crumb {
+    display: none;
+  }
+  .page-head {
+    padding: 16px 0 14px;
+    margin-bottom: 14px;
+    gap: 12px;
+  }
+  .page-head h1 {
+    font-size: 26px;
+  }
+  .head-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .head-actions > :last-child {
+    margin-left: auto;
+  }
+  .btn:active,
+  .icon-btn:active {
+    transform: scale(0.96);
+  }
+  /* Verkaufs-Toast über der Tab-Bar fixieren. */
+  .sale-toast {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: calc(78px + env(safe-area-inset-bottom));
+    margin: 0;
+    z-index: 80;
+  }
+}
+
+/* Touch: kein „klebender" Hover nach dem Tippen, stattdessen kurzes Feedback. */
+@media (hover: none) {
+  .tbl.click tbody tr:hover:not(.row-sel) {
+    background: transparent;
+  }
+  .stick-name.mgr-stick table.click tbody tr:hover:not(.row-sel) td:nth-child(1),
+  .stick-name.mgr-stick table.click tbody tr:hover:not(.row-sel) td:nth-child(2) {
+    background: var(--stick-bg);
+  }
+  .tbl.click tbody tr:active td {
+    background: #e6e9e5;
+  }
+}
+
+@media (max-width: 560px) {
+  .wrap,
+  .page {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  /* Manager-Liste: Kopf in einer Zeile (Titel links, Zahnrad rechts). */
+  .section-head.mgr-head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .mgr-head-right .note {
+    display: none;
+  }
+  /* Schmalere fixierte Namensspalte: Avatar weg, lange Namen gekürzt. */
+  .stick-name.mgr-stick .avatar {
+    display: none;
+  }
+  .stick-name.mgr-stick .mgr {
+    gap: 6px;
+  }
+  .stick-name.mgr-stick td:nth-child(2) .nm {
+    display: inline-block;
+    max-width: 118px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+  .stick-name table th,
+  .stick-name table td {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .pc-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pc-tile-val {
+    font-size: 13.5px;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Overlays: Scroll nicht an die Seite durchreichen; Home-Indikator freilassen. */
+.pc-panel,
+.oc-panel,
+.modal,
+.mgr-explorer-side,
+.sheet {
+  overscroll-behavior: contain;
+}
+@media (max-width: 700px) {
+  .mgr-explorer-side {
+    /* Desktop-sticky-top (72px) würde das Sheet sonst bis nach oben ziehen. */
+    top: auto;
+    max-height: 88dvh;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+@media (max-width: 560px) {
+  .pc-panel {
+    max-height: 92dvh;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  .oc-panel {
+    padding-top: env(safe-area-inset-top);
+  }
+  .oc-body {
+    padding-bottom: calc(32px + env(safe-area-inset-bottom));
   }
 }
