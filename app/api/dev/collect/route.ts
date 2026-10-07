@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { runCollect } from "../../../../lib/ingest/collect";
 
 // Login + Ranking je Liga, sequentiell mit Pausen → genug Zeit geben.
-export const maxDuration = 120;
+// Wie der Cron: alle Ligen nacheinander brauchen > 120 s (sonst Abbruch).
+export const maxDuration = 300;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

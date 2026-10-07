@@ -3,7 +3,8 @@ import { runCollect, runCollectLeague } from "../../../lib/ingest/collect";
 import { getServiceClient } from "../../../lib/db/client";
 
 // Ranking + Transfers (paginiert) + Markt je Liga → großzügiges Zeitbudget.
-export const maxDuration = 120;
+// Wie der Cron: alle Ligen nacheinander brauchen > 120 s (sonst Abbruch).
+export const maxDuration = 300;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
