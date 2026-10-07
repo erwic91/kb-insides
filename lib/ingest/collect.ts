@@ -23,6 +23,8 @@ import {
   upsertLeagues,
   upsertManagers,
   upsertManagerSnapshots,
+  upsertBaseSnapshots,
+  getLeagueLastCollected,
   upsertTransfers,
   upsertPlayers,
   upsertMarketLog,
@@ -99,13 +101,19 @@ async function collectLeagueWide(
     // M2 — Ranking.
     const ranking = await fetchRanking(leagueId, { token });
     const rows = parseRanking(ranking, leagueId);
+    // `ts` = zuletzt gesehen (nicht nur Anlage-Zeitpunkt): so bleibt „neuester
+    // Spieltag nach ts" auch beim nächsten Saisonwechsel richtig, wenn eine
+    // bestehende Spieltags-Zeile (z. B. Tag 1 der Vorsaison) überschrieben wird.
+    const seenAt = new Date().toISOString();
+    for (const snap of rows.snapshots) snap.ts = seenAt;
     await upsertLeague(rows.league);
     await upsertManagers(rows.managers);
     const day = rows.snapshots[0]?.day ?? null;
 
     // Basis-Snapshots SOFORT schreiben (Timeout-Sicherheit) — bevor die teure
-    // Pro-Manager-Schleife läuft.
-    await upsertManagerSnapshots(rows.snapshots);
+    // Pro-Manager-Schleife läuft. Ohne einen vorhandenen Live-Kaderwert mit dem
+    // (veralteten) Ranking-Wert vom Spieltagsbeginn zu überschreiben.
+    await upsertBaseSnapshots(rows.snapshots);
     await politeDelay();
 
     const snapById = new Map(rows.snapshots.map((s) => [s.manager_id, s]));
@@ -159,18 +167,19 @@ async function collectLeagueWide(
         }
         await politeDelay();
 
-        // Dashboard IMMER abrufen: liefert die Kickbase-Prämie (`prft`) je
-        // Manager — Basis für die exakte Kontorekonstruktion ALLER Manager (nicht
-        // nur des eigenen /me/budget). Zusätzlich Fallback für Kaderwert/Punkte.
-        try {
-          const dash = await fetchManagerDashboard(leagueId, manager.id, { token });
-          if (dash.prft != null) snap.prizes = dash.prft;
-          if (!hasTv(snap.team_value) && hasTv(dash.tv ?? null)) snap.team_value = dash.tv ?? null;
-          snap.points = snap.points ?? dash.tp ?? null;
-        } catch (e) {
-          warn(`dashboard ${manager.id}: ${(e as Error).message}`);
+        // Dashboard nur als Fallback, wenn der Kader keinen Kaderwert lieferte.
+        // (`prft` dort ist KEINE Prämie, sondern eine Gewinn-/Verlust-Kennzahl —
+        // an Live-Daten geprüft; die Kontoregel braucht es nicht.)
+        if (!hasTv(snap.team_value)) {
+          try {
+            const dash = await fetchManagerDashboard(leagueId, manager.id, { token });
+            if (hasTv(dash.tv ?? null)) snap.team_value = dash.tv ?? null;
+            snap.points = snap.points ?? dash.tp ?? null;
+          } catch (e) {
+            warn(`dashboard ${manager.id}: ${(e as Error).message}`);
+          }
+          await politeDelay();
         }
-        await politeDelay();
       }
 
       try {
@@ -414,9 +423,16 @@ export async function runCollect(): Promise<{ leagues: LeagueIngestResult[] }> {
     budgetTasks.push({ userId: t.userId, kbUserId: t.kbUserId, leagueId: t.leagueId, token });
   }
 
+  // Am längsten nicht gesammelte Liga zuerst: bricht der Lauf ab (Timeout),
+  // trifft es beim nächsten Mal eine andere Liga statt immer dieselbe.
+  const lastCollected = await getLeagueLastCollected([...leagueToken.keys()]);
+  const ordered = [...leagueToken].sort(
+    ([a], [b]) => (lastCollected.get(a) ?? "").localeCompare(lastCollected.get(b) ?? ""),
+  );
+
   const leagues: LeagueIngestResult[] = [];
   const leagueDay = new Map<string, number | null>();
-  for (const [leagueId, token] of leagueToken) {
+  for (const [leagueId, token] of ordered) {
     // Nächtlicher Cron → Tages-Snapshot des Kaderwerts schreiben.
     const r = await collectLeagueWide(leagueId, token, { recordDailyTv: true });
     leagueDay.set(leagueId, r.day ?? null);

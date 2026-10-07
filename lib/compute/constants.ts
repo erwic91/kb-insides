@@ -32,3 +32,13 @@ export const DEFAULT_MARKET_CADENCE_DAYS = 14;
  */
 export const TTY_BUY = 1;
 export const TTY_SELL = 2;
+
+/**
+ * Spieltagsbonus im Manager-Modus (game_mode 2): Kickbase schreibt je
+ * Saisonpunkt 1.000 € gut. An LIVE-Daten verifiziert (exakter /me/budget-
+ * Kontostand zu vier Zeitpunkten, 04.09.–07.10.):
+ *   Konto = Start − Käufe + Verkäufe + Login-Bonus + 1.000 € × Saisonpunkte
+ * stimmte jedes Mal bis auf einen konstanten, managerspezifischen Versatz
+ * (−500.000 €) auf den Euro — die Rate ist also exakt 1.000 €/Punkt.
+ */
+export const MATCHDAY_BONUS_PER_POINT = 1000;

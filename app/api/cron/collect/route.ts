@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { runCollect } from "../../../../lib/ingest/collect";
 
-// ~20-25 sequential requests per league; give the run room to breathe.
-export const maxDuration = 120;
+// ~35-40 s je Liga (Kader + Transfers je Manager, höfliche Pausen). Mit 120 s
+// brach der Lauf bei ~6 Ligen ab → Kaderwerte blieben tagelang veraltet.
+export const maxDuration = 300;
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 

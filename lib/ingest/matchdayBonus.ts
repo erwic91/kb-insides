@@ -1,7 +1,7 @@
 import { getServiceClient } from "../db/client";
 
 /** Spieltagsbonus: Kickbase schreibt je Saisonpunkt diesen Betrag gut (Manager-Modus). */
-export const MATCHDAY_BONUS_PER_POINT = 1000;
+export { MATCHDAY_BONUS_PER_POINT } from "../compute/constants";
 
 export interface MatchdayBonusResult {
   leagues: number;
@@ -30,7 +30,9 @@ export async function snapshotMatchdayBonus(): Promise<MatchdayBonusResult> {
       .from("manager_snapshots")
       .select("day")
       .eq("league_id", leagueId)
-      .order("day", { ascending: false })
+      // Nach Snapshot-Zeit, NICHT nach Spieltagsnummer: nach dem Saisonwechsel
+      // ist MAX(day) der veraltete Vorsaison-Tag 34 (→ 0 Punkte eingefroren).
+      .order("ts", { ascending: false })
       .limit(1)
       .maybeSingle();
     const day = dayRow?.day as number | null | undefined;

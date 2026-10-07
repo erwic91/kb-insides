@@ -1,6 +1,7 @@
 import { getServiceClient } from "../db/client";
 import { reconstructCash } from "../compute/reconstruct";
 import { loginBonusSinceReset } from "../compute/loginBonus";
+import { buildIncomeModel } from "../compute/income";
 import type { Direction } from "./transfers";
 
 /**
@@ -21,21 +22,24 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
     .maybeSingle();
   const startBudget = (lg?.start_budget as number) ?? 0;
   const trackingSince = (lg?.tracking_since as string | null) ?? null;
+  const gameMode = (lg?.game_mode as number | null) ?? null;
   const sinceMs = trackingSince ? Date.parse(trackingSince) : null;
 
-  // Jüngster Spieltag → Kaderwert & Punkte je Manager.
+  // Jüngster Spieltag → Kaderwert & Punkte je Manager. Nach Snapshot-Zeit (ts),
+  // NICHT nach Spieltagsnummer: nach dem Saisonwechsel ist MAX(day) der veraltete
+  // Vorsaison-Tag 34 — das hat den Verlauf wochenlang auf einem Wert eingefroren.
   const { data: dayRow } = await supabase
     .from("manager_snapshots")
     .select("day")
     .eq("league_id", leagueId)
-    .order("day", { ascending: false })
+    .order("ts", { ascending: false })
     .limit(1)
     .maybeSingle();
   const day = dayRow?.day as number | null | undefined;
   if (day == null) return;
   const { data: snaps } = await supabase
     .from("manager_snapshots")
-    .select("manager_id, team_value, points, prizes")
+    .select("manager_id, team_value, points")
     .eq("league_id", leagueId)
     .eq("day", day);
   if (!snaps || snaps.length === 0) return;
@@ -71,6 +75,7 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
     adjSum.set(mid, (adjSum.get(mid) ?? 0) + ((a.amount as number) ?? 0));
   }
   const loginBonus = loginBonusSinceReset(trackingSince, Date.now());
+  const income = buildIncomeModel({ startBudget, loginBonus, gameMode });
   const snapDate = new Date().toISOString().slice(0, 10);
 
   const rows = snaps.map((s) => {
@@ -80,12 +85,14 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
     if (startBudget > 0) {
       const all = byMgr.get(mid) ?? [];
       const filtered = sinceMs != null ? all.filter((t) => t.ts != null && Date.parse(t.ts) >= sinceMs) : all;
-      // Prämien: exakt über Kickbases `prft` (falls erfasst), sonst Login-Bonus.
-      // Die feine Kalibrierung (prft-Offset / €-Punkt-Rate) passiert im Read-Layer
-      // gegen den eigenen exakten Anker; dieser manager-neutrale Snapshot nimmt
-      // den robusten Basiswert.
-      const prft = (s.prizes as number | null) ?? null;
-      const prizes = (prft != null ? prft : loginBonus) + (adjSum.get(mid) ?? 0);
+      // Prämien nach der verifizierten Kickbase-Regel (identisch zum Read-Layer):
+      // Login-Bonus + 1.000 € je Saisonpunkt (Manager-Modus) + Korrekturen.
+      const prizes = income.prizesFor({
+        buys: 0,
+        sells: 0,
+        points: (s.points as number | null) ?? null,
+        adjustment: adjSum.get(mid) ?? 0,
+      });
       cash = reconstructCash(filtered, { startBudget, prizes });
     }
     return {

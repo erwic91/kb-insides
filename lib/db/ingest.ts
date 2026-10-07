@@ -175,6 +175,47 @@ export async function upsertManagerSnapshots(snapshots: SnapshotRow[]): Promise<
   if (error) throw new Error(`manager_snapshots upsert fehlgeschlagen: ${error.message}`);
 }
 
+/**
+ * Basis-Snapshots aus dem Ranking schreiben, OHNE einen bereits vorhandenen
+ * Kaderwert zu überschreiben. Hintergrund (an Live-Daten belegt): das Ranking
+ * liefert den Kaderwert vom SPIELTAGSBEGINN. Wurde er zuerst über den Live-Wert
+ * (Kader-Summe) geschrieben und brach der Lauf danach ab (Timeout), blieb der
+ * veraltete Wert tagelang stehen. Bestehende Zeilen bekommen daher nur Punkte/
+ * Serie/ts; neue Zeilen starten mit dem Ranking-Kaderwert als Platzhalter, bis
+ * die Anreicherung (upsertManagerSnapshots) den Live-Wert schreibt.
+ */
+export async function upsertBaseSnapshots(snapshots: SnapshotRow[]): Promise<void> {
+  if (snapshots.length === 0) return;
+  const supabase = getServiceClient();
+  const { league_id, day } = snapshots[0]!;
+  const { data: existing } = await supabase
+    .from("manager_snapshots")
+    .select("manager_id")
+    .eq("league_id", league_id)
+    .eq("day", day);
+  const have = new Set((existing ?? []).map((r) => r.manager_id as string));
+
+  const fresh = snapshots.filter((s) => !have.has(s.manager_id));
+  const known = snapshots
+    .filter((s) => have.has(s.manager_id))
+    .map((s) => ({
+      league_id: s.league_id,
+      manager_id: s.manager_id,
+      day: s.day,
+      points: s.points,
+      points_series: s.points_series,
+      ...(s.ts ? { ts: s.ts } : {}),
+    }));
+
+  if (fresh.length > 0) await upsertManagerSnapshots(fresh);
+  if (known.length > 0) {
+    const { error } = await supabase
+      .from("manager_snapshots")
+      .upsert(known, { onConflict: "league_id,manager_id,day" });
+    if (error) throw new Error(`manager_snapshots (Basis) upsert fehlgeschlagen: ${error.message}`);
+  }
+}
+
 /** Käufe eines Managers ohne Marktwert-zum-Zeitpunkt (für den Overpay-Backfill). */
 export async function getBuyTransfersMissingMv(
   leagueId: string,
@@ -416,4 +457,22 @@ export async function upsertCalibration(row: {
     .from("calibration")
     .upsert(row, { onConflict: "league_id,day" });
   if (error) throw new Error(`calibration upsert fehlgeschlagen: ${error.message}`);
+}
+
+/** Zuletzt gesammelt je Liga (jüngster Snapshot-ts) — für „stalest first". */
+export async function getLeagueLastCollected(leagueIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (leagueIds.length === 0) return out;
+  const supabase = getServiceClient();
+  for (const id of leagueIds) {
+    const { data } = await supabase
+      .from("manager_snapshots")
+      .select("ts")
+      .eq("league_id", id)
+      .order("ts", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data?.ts) out.set(id, data.ts as string);
+  }
+  return out;
 }

@@ -30,8 +30,10 @@ export interface SnapshotRow {
   cash_actual: number | null;
   /** Punkte je Spieltag (Serie) aus ranking `us[].lp` — Formkurve. */
   points_series: (number | null)[] | null;
-  /** Kickbase-Prämie/Gewinn (`prft` aus dem Dashboard) — im Collector angereichert. */
+  /** Kickbase-Prämie/Gewinn (`prft` aus dem Dashboard) — derzeit ungenutzt. */
   prizes: number | null;
+  /** Zuletzt gesehen (Live-Collector setzt es; Backfill lässt es weg). */
+  ts?: string;
 }
 
 export interface RankingRows {
