@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseServerClient } from "../supabase/server";
 import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
 import { buildIncomeModel, type ManagerFin, type IncomeMode, type OwnAnchorInput } from "../compute/income";
@@ -248,13 +249,25 @@ async function getPrevManagerMetrics(leagueId: string): Promise<Map<string, Prev
  * Marktwert der Kader gerade gewinnt/verliert. Leer, solange < 2 Snapshot-Tage
  * vorliegen.
  */
-async function getSquadMvGrowth(leagueId: string): Promise<Map<string, number>> {
-  const supabase = await getReadClient();
-  const out = new Map<string, number>();
-  if (!supabase) return out;
+/**
+ * Jüngstes ECHTES Marktwert-Tagespaar einer Liga. Ein Snapshot-Tag, an dem sich
+ * ligaweit KEIN einziger Marktwert gegenüber dem Vortag geändert hat, wurde vor
+ * dem nächtlichen Kickbase-Update aufgenommen (Duplikat des Vortags) — er wird
+ * übersprungen, sonst zeigen Kader-Momentum und „Entwicklung seit gestern"
+ * überall 0. Liefert den Ankertag D (mit D−1 vorhanden) und alle Werte der
+ * letzten Tage (player_id → mv je Datum). Je Request gecacht.
+ */
+interface MvDayAnchor {
+  day: string;
+  prev: string;
+  byDate: Map<string, Map<string, number>>;
+}
+const isoMinusDays = (iso: string, n: number) =>
+  new Date(Date.parse(iso + "T00:00:00Z") - n * 86_400_000).toISOString().slice(0, 10);
 
-  // Die zwei jüngsten Snapshot-Tage bestimmen (alle Spieler teilen sich die
-  // nächtlichen snap_dates, daher genügen zwei gezielte Abfragen).
+const getMvDayAnchor = cache(async (leagueId: string): Promise<MvDayAnchor | null> => {
+  const supabase = await getReadClient();
+  if (!supabase) return null;
   const { data: latestRow } = await supabase
     .from("player_mv_daily")
     .select("snap_date")
@@ -263,32 +276,57 @@ async function getSquadMvGrowth(leagueId: string): Promise<Map<string, number>> 
     .limit(1)
     .maybeSingle();
   const latest = latestRow?.snap_date as string | undefined;
-  if (!latest) return out;
-  const { data: prevRow } = await supabase
-    .from("player_mv_daily")
-    .select("snap_date")
-    .eq("league_id", leagueId)
-    .lt("snap_date", latest)
-    .order("snap_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const prev = prevRow?.snap_date as string | undefined;
-  if (!prev) return out; // braucht zwei Tage
+  if (!latest) return null;
 
-  const { data: mvRows } = await supabase
-    .from("player_mv_daily")
-    .select("player_id, market_value, snap_date")
-    .eq("league_id", leagueId)
-    .in("snap_date", [latest, prev]);
-  const cur = new Map<string, number>();
-  const old = new Map<string, number>();
-  for (const r of mvRows ?? []) {
-    const pid = r.player_id as string;
+  // Die letzten 8 Tage laden (paginiert: ~250 Spieler × 8 Tage > 1000 Zeilen).
+  const rows = await fetchAllRows<Record<string, unknown>>((from, to) =>
+    supabase
+      .from("player_mv_daily")
+      .select("player_id, market_value, snap_date")
+      .eq("league_id", leagueId)
+      .gte("snap_date", isoMinusDays(latest, 8))
+      .order("snap_date", { ascending: false })
+      .order("player_id", { ascending: true })
+      .range(from, to),
+  );
+  const byDate = new Map<string, Map<string, number>>();
+  for (const r of rows) {
     const mv = r.market_value as number | null;
     if (mv == null) continue;
-    if (r.snap_date === latest) cur.set(pid, mv);
-    else old.set(pid, mv);
+    const d = r.snap_date as string;
+    const m = byDate.get(d) ?? new Map<string, number>();
+    m.set(r.player_id as string, mv);
+    byDate.set(d, m);
   }
+
+  const dates = [...byDate.keys()].sort().reverse();
+  for (const d of dates) {
+    const prev = isoMinusDays(d, 1);
+    const cur = byDate.get(d)!;
+    const old = byDate.get(prev);
+    if (!old) continue; // Vortag fehlt → kein Tagespaar
+    let changed = false;
+    for (const [pid, mv] of cur) {
+      const o = old.get(pid);
+      if (o != null && o !== mv) {
+        changed = true;
+        break;
+      }
+    }
+    if (changed) return { day: d, prev, byDate };
+  }
+  return null;
+});
+
+async function getSquadMvGrowth(leagueId: string): Promise<Map<string, number>> {
+  const supabase = await getReadClient();
+  const out = new Map<string, number>();
+  if (!supabase) return out;
+
+  const anchor = await getMvDayAnchor(leagueId);
+  if (!anchor) return out;
+  const cur = anchor.byDate.get(anchor.day)!;
+  const old = anchor.byDate.get(anchor.prev)!;
 
   // Spieler → Manager zuordnen und die Deltas je Manager aufsummieren.
   const { data: sq } = await supabase
@@ -1098,6 +1136,7 @@ export async function getManagerSquad(
   // aus squad_players gegen den jüngsten Snapshot): der Live-Wert stammt aus
   // demselben Sammel-Lauf wie der jüngste Snapshot und wäre damit identisch →
   // ergäbe fälschlich „0 €".
+  const mvAnchor = await getMvDayAnchor(league.id);
   // player_id → jüngste Snapshots [{date, mv}] (neu→alt), bis zu 8 Tage.
   const mvHist = new Map<string, { date: string; mv: number }[]>();
   if (pids.length > 0) {
@@ -1150,15 +1189,18 @@ export async function getManagerSquad(
     let mvChangeDayPct: number | null = null;
     let mvChangePrev: number | null = null;
     let mvChangePrevPct: number | null = null;
-    if (hist.length > 0) {
-      const d0 = hist[0]!;
-      const base = Date.parse(d0.date + "T00:00:00Z");
+    // Anker = jüngster ECHTER Snapshot-Tag der Liga (Duplikat-Tage vor dem
+    // Kickbase-Update werden übersprungen), sonst der jüngste eigene Snapshot.
+    const anchorDay = mvAnchor?.day ?? hist[0]?.date ?? null;
+    const v0 = anchorDay ? mvOn(anchorDay) : null;
+    if (anchorDay && v0 != null) {
+      const base = Date.parse(anchorDay + "T00:00:00Z");
       const dayIso = (offset: number) =>
         new Date(base - offset * 86_400_000).toISOString().slice(0, 10);
       const v1 = mvOn(dayIso(1));
       const v2 = mvOn(dayIso(2));
       if (v1 != null) {
-        mvChangeDay = d0.mv - v1;
+        mvChangeDay = v0 - v1;
         mvChangeDayPct = v1 ? mvChangeDay / v1 : null;
       }
       if (v1 != null && v2 != null) {
