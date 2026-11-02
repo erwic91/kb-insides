@@ -6,6 +6,7 @@ import { loginBonusSinceReset } from "../compute/loginBonus";
 import { getAdjustmentSums } from "./adjustments";
 import { computeBidAdvice, type BidAdvice } from "../compute/bidadvisor";
 import { START_BUDGET } from "../compute/constants";
+import { pickMvAnchorDay } from "../compute/mvAnchor";
 import type { Direction } from "../ingest/transfers";
 import { ensureToken } from "../kickbase/session";
 import { fetchPlayerMarketValue } from "../kickbase/endpoints";
@@ -251,7 +252,7 @@ async function getPrevManagerMetrics(leagueId: string): Promise<Map<string, Prev
  */
 /**
  * Jüngstes ECHTES Marktwert-Tagespaar einer Liga. Ein Snapshot-Tag, an dem sich
- * ligaweit KEIN einziger Marktwert gegenüber dem Vortag geändert hat, wurde vor
+ * ligaweit (fast) kein Marktwert gegenüber dem Vortag geändert hat, wurde vor
  * dem nächtlichen Kickbase-Update aufgenommen (Duplikat des Vortags) — er wird
  * übersprungen, sonst zeigen Kader-Momentum und „Entwicklung seit gestern"
  * überall 0. Liefert den Ankertag D (mit D−1 vorhanden) und alle Werte der
@@ -299,23 +300,8 @@ const getMvDayAnchor = cache(async (leagueId: string): Promise<MvDayAnchor | nul
     byDate.set(d, m);
   }
 
-  const dates = [...byDate.keys()].sort().reverse();
-  for (const d of dates) {
-    const prev = isoMinusDays(d, 1);
-    const cur = byDate.get(d)!;
-    const old = byDate.get(prev);
-    if (!old) continue; // Vortag fehlt → kein Tagespaar
-    let changed = false;
-    for (const [pid, mv] of cur) {
-      const o = old.get(pid);
-      if (o != null && o !== mv) {
-        changed = true;
-        break;
-      }
-    }
-    if (changed) return { day: d, prev, byDate };
-  }
-  return null;
+  const pick = pickMvAnchorDay(byDate);
+  return pick ? { ...pick, byDate } : null;
 });
 
 async function getSquadMvGrowth(leagueId: string): Promise<Map<string, number>> {
