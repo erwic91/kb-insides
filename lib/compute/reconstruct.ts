@@ -106,3 +106,49 @@ export function realizedProfitFIFO(
     hitRate: closedTrades > 0 ? wins / closedTrades : null,
   };
 }
+
+/** Zeitfenster, in dem eine doppelte Aktion als Rückabwicklung gilt. */
+export const REVERT_WINDOW_MS = 7 * 86_400_000;
+
+/**
+ * Entfernt rückgängig gemachte Transfers. Ein Manager kann denselben Spieler
+ * nicht zweimal verkaufen (bzw. kaufen), ohne ihn dazwischen zu kaufen (bzw. zu
+ * verkaufen). Folgen zwei gleiche Aktionen kurz aufeinander, wurde die erste
+ * zurückgenommen — Kickbase löscht sie bei einer Rückabwicklung teils, statt
+ * eine Gegenbuchung anzulegen; wir hatten die Zeile aber schon gespeichert.
+ * Live-Fall: Olise zweimal als Verkauf (15:48 und 17:26, Rückabwicklung
+ * dazwischen) → +65 Mio zu viel auf dem rekonstruierten Konto.
+ *
+ * Nur innerhalb von REVERT_WINDOW_MS: Paare über einen Saisonwechsel (Spieler
+ * fällt ohne Verkaufs-Zeile an Kickbase zurück) liegen Monate auseinander und
+ * bleiben unangetastet. `rows` = Transfers EINES Managers.
+ */
+export function dropRevertedTransfers<T>(
+  rows: T[],
+  get: (r: T) => { player: string; direction: "buy" | "sell"; ts: string | null },
+): T[] {
+  const byPlayer = new Map<string, T[]>();
+  for (const r of rows) {
+    const k = get(r).player;
+    const arr = byPlayer.get(k) ?? [];
+    arr.push(r);
+    byPlayer.set(k, arr);
+  }
+  const drop = new Set<T>();
+  const ms = (r: T) => {
+    const ts = get(r).ts;
+    return ts ? Date.parse(ts) : Number.NaN;
+  };
+  for (const list of byPlayer.values()) {
+    if (list.length < 2) continue;
+    const sorted = [...list].sort((a, b) => ms(a) - ms(b));
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i]!;
+      const b = sorted[i + 1]!;
+      if (get(a).direction !== get(b).direction) continue;
+      const gap = ms(b) - ms(a);
+      if (!Number.isNaN(gap) && gap >= 0 && gap <= REVERT_WINDOW_MS) drop.add(a);
+    }
+  }
+  return drop.size > 0 ? rows.filter((r) => !drop.has(r)) : rows;
+}

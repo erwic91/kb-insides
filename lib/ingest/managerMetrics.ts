@@ -1,5 +1,5 @@
 import { getServiceClient } from "../db/client";
-import { reconstructCash } from "../compute/reconstruct";
+import { reconstructCash, dropRevertedTransfers } from "../compute/reconstruct";
 import { loginBonusSinceReset } from "../compute/loginBonus";
 import { buildIncomeModel } from "../compute/income";
 import type { Direction } from "./transfers";
@@ -46,12 +46,15 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
 
   // Transfers je Manager (owner = Käufer bei buy, sonst Verkäufer). Paginiert —
   // sonst kappt PostgREST bei 1000 Zeilen und die Rekonstruktion wird falsch.
-  const byMgr = new Map<string, { direction: Direction; price: number; ts: string | null }[]>();
+  const byMgr = new Map<
+    string,
+    { player: string; direction: Direction; price: number; ts: string | null }[]
+  >();
   const trs: Record<string, unknown>[] = [];
   for (let from = 0; ; from += 1000) {
     const { data: page } = await supabase
       .from("transfers")
-      .select("from_manager, to_manager, direction, price, ts, id")
+      .select("from_manager, to_manager, direction, price, ts, id, player_id")
       .eq("league_id", leagueId)
       .order("id", { ascending: true })
       .range(from, from + 999);
@@ -64,9 +67,16 @@ export async function snapshotManagerMetrics(leagueId: string): Promise<void> {
     const owner = direction === "buy" ? (t.to_manager as string | null) : (t.from_manager as string | null);
     if (!owner) continue;
     const arr = byMgr.get(owner) ?? [];
-    arr.push({ direction, price: (t.price as number) ?? 0, ts: (t.ts as string | null) ?? null });
+    arr.push({
+      player: (t.player_id as string) ?? "",
+      direction,
+      price: (t.price as number) ?? 0,
+      ts: (t.ts as string | null) ?? null,
+    });
     byMgr.set(owner, arr);
   }
+  // Rückgängig gemachte Transfers (doppelte Aktion ohne Gegenbuchung) entfernen.
+  for (const [mid, list] of byMgr) byMgr.set(mid, dropRevertedTransfers(list, (t) => t));
 
   const adjSum = new Map<string, number>();
   const { data: adj } = await supabase.from("adjustments").select("manager_id, amount").eq("league_id", leagueId);

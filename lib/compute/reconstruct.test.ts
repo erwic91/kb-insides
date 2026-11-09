@@ -8,6 +8,7 @@ import {
   maxBid,
   overpay,
   realizedProfitFIFO,
+  dropRevertedTransfers,
 } from "./reconstruct";
 
 const fixture = JSON.parse(
@@ -74,5 +75,38 @@ describe("realizedProfitFIFO (echte Daten)", () => {
   it("errechnet die Trefferquote (3 von 5 mit Gewinn)", () => {
     expect(r.wins).toBe(3);
     expect(r.hitRate).toBeCloseTo(0.6, 5);
+  });
+});
+
+
+describe("dropRevertedTransfers", () => {
+  type R = { p: string; d: "buy" | "sell"; ts: string; price: number };
+  const get = (r: R) => ({ player: r.p, direction: r.d, ts: r.ts });
+
+  it("Olise-Fall: zweiter Verkauf ohne Rückkauf → erster Verkauf entfällt", () => {
+    const rows: R[] = [
+      { p: "olise", d: "buy", ts: "2026-08-16T09:19:09Z", price: 95_789_463 },
+      { p: "olise", d: "sell", ts: "2026-11-01T15:48:00Z", price: 65_246_886 },
+      { p: "olise", d: "sell", ts: "2026-11-01T17:26:01Z", price: 65_246_886 },
+    ];
+    const out = dropRevertedTransfers(rows, get);
+    expect(out.map((r) => r.ts)).toEqual(["2026-08-16T09:19:09Z", "2026-11-01T17:26:01Z"]);
+  });
+
+  it("korrekt gebuchte Rückabwicklung (Kauf, Verkauf, Kauf) bleibt komplett", () => {
+    const rows: R[] = [
+      { p: "nkunku", d: "buy", ts: "2026-11-01T15:47:44Z", price: 26_338_658 },
+      { p: "nkunku", d: "sell", ts: "2026-11-01T17:19:22Z", price: 26_338_658 },
+      { p: "nkunku", d: "buy", ts: "2026-11-01T17:25:43Z", price: 26_338_658 },
+    ];
+    expect(dropRevertedTransfers(rows, get)).toHaveLength(3);
+  });
+
+  it("Paar über den Saisonwechsel (Monate auseinander) bleibt unangetastet", () => {
+    const rows: R[] = [
+      { p: "karl", d: "buy", ts: "2025-12-22T23:41:00Z", price: 27_005_423 },
+      { p: "karl", d: "buy", ts: "2026-02-11T10:59:00Z", price: 20_000_000 },
+    ];
+    expect(dropRevertedTransfers(rows, get)).toHaveLength(2);
   });
 });

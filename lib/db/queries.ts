@@ -1,6 +1,11 @@
 import { cache } from "react";
 import { createSupabaseServerClient } from "../supabase/server";
-import { reconstructCash, maxBid, realizedProfitFIFO } from "../compute/reconstruct";
+import {
+  reconstructCash,
+  maxBid,
+  realizedProfitFIFO,
+  dropRevertedTransfers,
+} from "../compute/reconstruct";
 import { buildIncomeModel, type ManagerFin, type IncomeMode, type OwnAnchorInput } from "../compute/income";
 import { loginBonusSinceReset } from "../compute/loginBonus";
 import { getAdjustmentSums } from "./adjustments";
@@ -441,6 +446,13 @@ async function getTransfersByManager(
     const arr = byManager.get(owner) ?? [];
     arr.push(row);
     byManager.set(owner, arr);
+  }
+  // Rückgängig gemachte Transfers (doppelte Aktion ohne Gegenbuchung) entfernen.
+  for (const [mid, list] of byManager) {
+    byManager.set(
+      mid,
+      dropRevertedTransfers(list, (t) => ({ player: t.playerId, direction: t.direction, ts: t.ts })),
+    );
   }
   return byManager;
 }
@@ -1750,17 +1762,21 @@ export async function getPlayerDetail(
     for (const m of mdata ?? []) names.set(m.id as string, (m.name as string) ?? (m.id as string));
   }
 
-  const transfers = (tr ?? []).map((t) => {
-    const direction = (t.direction as Direction) ?? "buy";
-    const owner = (direction === "buy" ? t.to_manager : t.from_manager) as string | null;
-    return {
-      managerId: owner ?? "",
-      managerName: owner ? (names.get(owner) ?? owner) : "Markt",
-      direction,
-      price: (t.price as number) ?? 0,
-      ts: (t.ts as string) ?? null,
-    };
-  });
+  const transfers = dropRevertedTransfers(
+    (tr ?? []).map((t) => {
+      const direction = (t.direction as Direction) ?? "buy";
+      const owner = (direction === "buy" ? t.to_manager : t.from_manager) as string | null;
+      return {
+        managerId: owner ?? "",
+        managerName: owner ? (names.get(owner) ?? owner) : "Markt",
+        direction,
+        price: (t.price as number) ?? 0,
+        ts: (t.ts as string) ?? null,
+      };
+    }),
+    // Ein Spieler → Schlüssel je Manager (Rückabwicklungen ohne Gegenbuchung).
+    (t) => ({ player: t.managerId, direction: t.direction, ts: t.ts }),
+  );
 
   if (!pdata && mvHistory.length === 0 && transfers.length === 0) return null;
 
