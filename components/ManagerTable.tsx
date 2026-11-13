@@ -281,6 +281,23 @@ export default function ManagerTable({
   }, [rows, sort.key]);
   const rankLabel = RANK_LABEL[sort.key] ?? "Kennzahl";
 
+  // Aktueller Tabellenplatz (Saisonpunkte, wie die Kickbase-Tabelle) — als
+  // Badge hinter dem Namen, damit er bei jeder Sortierung sichtbar bleibt.
+  // Punktgleiche teilen sich den Platz.
+  const tablePos = useMemo(() => {
+    const out = new Map<string, number>();
+    const pool = rows
+      .filter((r) => r.active && r.points != null)
+      .sort((a, b) => (b.points ?? 0) - (a.points ?? 0));
+    pool.forEach((r, i) => {
+      const prev = pool[i - 1];
+      out.set(r.id, prev && prev.points === r.points ? out.get(prev.id)! : i + 1);
+    });
+    return out;
+  }, [rows]);
+  // Bei Sortierung nach Punkten entspricht die Zeilennummer bereits dem Platz.
+  const showTablePos = sort.key !== "points" && tablePos.size > 1;
+
   const leagueHref = (base: string) => `${base}?league=${encodeURIComponent(leagueId)}`;
 
   const gear =
@@ -367,6 +384,14 @@ export default function ManagerTable({
                     <Link href={leagueHref(`/manager/${r.id}`)} className="nm linklike">
                       {r.name}
                     </Link>
+                  )}
+                  {showTablePos && tablePos.has(r.id) && (
+                    <span
+                      className="tablepos"
+                      title={`Tabellenplatz ${tablePos.get(r.id)} (Saisonpunkte)`}
+                    >
+                      Pl. {tablePos.get(r.id)}
+                    </span>
                   )}
                   {(() => {
                     const d = rankDeltas.get(r.id);
